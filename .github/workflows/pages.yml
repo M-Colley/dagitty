@@ -1,0 +1,43 @@
+name: Deploy DAGitty GUI to GitHub Pages
+
+# Publishes the static app in gui/ to GitHub Pages.
+# The site becomes available at https://<user>.github.io/<repo>/
+# (gui/index.html redirects to dags.html, so the root URL opens the app).
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+# Permissions required by the Pages deploy action
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; don't cancel an in-progress run
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload gui/ as the site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: gui
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
