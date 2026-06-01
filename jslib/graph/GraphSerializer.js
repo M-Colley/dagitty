@@ -75,10 +75,9 @@ var GraphSerializer = {
 	},
 	
 	toDotEdgeStatements : function( g ){
-		var edgestat = [], es, eop, 
-			barewordre = 
+		var edgestat = [], es, eop
 		_.each(g.edges,function(e){
-			es = e.toString( barewordre )
+			es = e.toString()
 			eop = []
 			if( e.layout_pos_x ){
 				eop.push("pos=\"" + 

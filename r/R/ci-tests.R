@@ -248,8 +248,8 @@
 	crit <- qnorm( (1-conf.level)/2, lower.tail=FALSE )
 	r <- c( pcor, 
 		pcor.pval,
-		atan( pcor.z-crit*pcor.z.sem ),
-		atan( pcor.z+crit*pcor.z.sem ) )
+		tanh( pcor.z-crit*pcor.z.sem ),
+		tanh( pcor.z+crit*pcor.z.sem ) )
 	w <- (1-conf.level)/2
 	names(r) <- c("estimate","p.value",
 		      paste0(100*w,"%"),paste0(100*(1-w),"%"))

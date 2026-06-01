@@ -771,36 +771,6 @@ var Graph = Class.extend({
 			}, this )
 		}, this )
 		return r
-	},
-	
-	sourceConnectedToTarget: function(){
-		if( !this.getSource() || !this.getTarget() ){
-			return false
-		}
-		if( arguments.length == 0 ){
-			return this.sourceConnectedToTarget( this.getSource(), this.getTarget() )
-		} else if( arguments.length == 1 ){
-			var avoid_nodes = arguments[0]
-			this.clearTraversalInfo()
-			_.each( avoid_nodes, function(v){ 
-				this.getVertex(v) && (this.getVertex(v).traversal_info.visited = true)
-			}, this )
-			return this.sourceConnectedToTarget( this.getSource(), this.getTarget() )
-		} else {
-			var s = arguments[0], t = arguments[1]
-			if( !s.traversal_info ){ this.clearTraversalInfo() } 
-			if( s == t ){
-				return true
-			}
-			s.traversal_info.visited = true
-			if( s.getChildren().any( function( n ){
-				return !n.traversal_info.visited && !n.traversal_info.adjusted_for 
-				&& this.sourceConnectedToTarget( n, t ) }, this ) ){
-				return true
-			}
-			s.traversal_info.visited = false
-			return false
-		}
 	}
 } ); // Class.create
 
@@ -1390,7 +1360,7 @@ var GraphAnalyzer = {
 		if( S == null ){
 			S = g.getSelectedNodes()
 		}
-		var Zg = _.map( Z, Graph.getVertex, g )
+		var Zg = _.map( Z, g.getVertex, g )
 		if( _.intersection( this.dpcp(g), Zg ).length > 0 ){
 			return false
 		}
@@ -1417,7 +1387,7 @@ var GraphAnalyzer = {
 		} else {
 		}
 		var gbd = GraphTransformer.indirectGraph(g)
-		return !this.dConnected( gbd, gbd.getSources(), gbd.getTargets(), _.map( Z, Graph.getVertex, gbd ) )
+		return !this.dConnected( gbd, gbd.getSources(), gbd.getTargets(), _.map( Z, gbd.getVertex, gbd ) )
 	},
 
 	isAdjustmentSetCausalOddsRatio : function( g, Z, S ){
@@ -1431,12 +1401,12 @@ var GraphAnalyzer = {
 		if( Z == null ){
 			Z = g.getAdjustedNodes()
 		} else {
-			Z = _.map( Z, Graph.getVertex, g )
+			Z = _.map( Z, g.getVertex, g )
 		}
 		if( S == null ){
 			S = g.getSelectedNodes()
 		} else {
-			S = _.map( S, Graph.getVertex, g )
+			S = _.map( S, g.getVertex, g )
 		}
 		if( S.length != 1 ){
 			return null
@@ -1477,7 +1447,7 @@ var GraphAnalyzer = {
 		var gbd = GraphTransformer.backDoorGraph(gg)
 		var S = gg.getSelectedNodes()
 		if( S.length > 0 ){
-			if( this.dConnected( gbd, gbd.getTargets(), _.map(S, Graph.getVertex, gbd ) ) ){
+			if( this.dConnected( gbd, gbd.getTargets(), _.map(S, gbd.getVertex, gbd ) ) ){
 				return []
 			} else {
 				_.each( S, function(s){ gbd.removeSelectedNode( s ); gbd.addAdjustedNode( s ) } )			
@@ -1486,8 +1456,8 @@ var GraphAnalyzer = {
 
 		var gam = GraphTransformer.moralGraph( GraphTransformer.ancestorGraph( gbd ) )
 
-		var adjusted_nodes = _.map( gg.getAdjustedNodes(), Graph.getVertex, gam )
-		var latent_nodes = _.map( gg.getLatentNodes().concat( this.dpcp(gg) ), Graph.getVertex, gam )
+		var adjusted_nodes = _.map( gg.getAdjustedNodes(), gam.getVertex, gam )
+		var latent_nodes = _.map( gg.getLatentNodes().concat( this.dpcp(gg) ), gam.getVertex, gam )
 
 		// at this point, "latent_nodes" may contain 
 		// undefined values because not all adjusted or latent nodes may have beeen
@@ -1499,9 +1469,9 @@ var GraphAnalyzer = {
 
 		// Give back vertex objects from original graph, rather than the constructed 
 		// ancestor moral graph.
-		S = _.map( S, Graph.getVertex, g )
+		S = _.map( S, g.getVertex, g )
 		for( i = 0 ; i < r.length ; i ++ ){
-			r[i] = _.map( r[i], Graph.getVertex, g )
+			r[i] = _.map( r[i], g.getVertex, g )
 			r[i] = _.difference( r[i], S )
 		}
 		return r
@@ -1641,13 +1611,13 @@ var GraphAnalyzer = {
 	  * that are consistent with the input graph. */
 	isDG : function( g ){
 		var cpdag = GraphTransformer.dependencyGraph2CPDAG( g ), p1, p2
-		if( g.edges.all( function( e ){
-			if( typeof cpdag.getEdge( e.v1.id, e.v2.id, 
-				Graph.Edgetype.Undirected ) == "undefined" ){ 
-				p1 = cpdag.getVertex(e.v1.id).getParents().pluck("id")
-				p2 = cpdag.getVertex(e.v2.id).getParents().pluck("id")
-				if( !p1.include(e.v2.id) && !p2.include(e.v1.id) 
-						&& p1.intersect(p2).length == 0 ){
+		if( _.every( g.edges, function( e ){
+			if( typeof cpdag.getEdge( e.v1.id, e.v2.id,
+				Graph.Edgetype.Undirected ) == "undefined" ){
+				p1 = _.pluck( cpdag.getVertex(e.v1.id).getParents(), "id" )
+				p2 = _.pluck( cpdag.getVertex(e.v2.id).getParents(), "id" )
+				if( !_.contains(p1,e.v2.id) && !_.contains(p2,e.v1.id)
+						&& _.intersection(p1,p2).length == 0 ){
 					return false
 				}
 			}
@@ -3970,12 +3940,12 @@ var GraphTransformer = {
 		if( typeof X == "undefined" ){
 			X = g.getSources()
 		} else {
-			X = _.map( X, Graph.getVertex, g )
+			X = _.map( X, g.getVertex, g )
 		}
 		if( typeof Y == "undefined" ){
 			Y = g.getTargets()
 		} else {
-			Y = _.map( Y, Graph.getVertex, g )
+			Y = _.map( Y, g.getVertex, g )
 		}
 		if( X.length == 0 || Y.length == 0 ){
 			return gback
@@ -5468,10 +5438,9 @@ var GraphSerializer = {
 	},
 	
 	toDotEdgeStatements : function( g ){
-		var edgestat = [], es, eop, 
-			barewordre = 
+		var edgestat = [], es, eop
 		_.each(g.edges,function(e){
-			es = e.toString( barewordre )
+			es = e.toString()
 			eop = []
 			if( e.layout_pos_x ){
 				eop.push("pos=\"" + 

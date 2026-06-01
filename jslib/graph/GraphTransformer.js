@@ -193,12 +193,12 @@ var GraphTransformer = {
 		if( typeof X == "undefined" ){
 			X = g.getSources()
 		} else {
-			X = _.map( X, Graph.getVertex, g )
+			X = _.map( X, g.getVertex, g )
 		}
 		if( typeof Y == "undefined" ){
 			Y = g.getTargets()
 		} else {
-			Y = _.map( Y, Graph.getVertex, g )
+			Y = _.map( Y, g.getVertex, g )
 		}
 		if( X.length == 0 || Y.length == 0 ){
 			return gback

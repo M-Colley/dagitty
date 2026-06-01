@@ -201,7 +201,7 @@
 }
 
 .nodesWithProperty <- function( x, type="source" ){
-	supported <- c("source","target","latentNode","adjustedNode","selectionNode")
+	supported <- c("source","target","latentNode","adjustedNode","selectedNode")
 	if( ! type %in% supported ){
 		stop("Supported properties : ",paste(supported,collapse=", ") )
 	}

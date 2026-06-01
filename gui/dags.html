@@ -1,203 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-    <meta http-equiv="Content-type" content="text/html; charset=UTF-8" />
-    <!--
-        DAGitty - a graphical tool for analyzing causal diagrams
-        Copyright (C) 2010-2023 Johannes Textor, Benito van der Zander
-    
-        This program is free software; you can redistribute it and/or
-        modify it under the terms of the GNU General Public License
-        as published by the Free Software Foundation; either version 2
-        of the License, or (at your option) any later version.
-    
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-    
-        You should have received a copy of the GNU General Public License
-        along with this program; if not, write to the Free Software
-        Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.   
-    -->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DAGitty v3.1 — Causal Diagram Analysis</title>
+  <meta name="description" content="Draw and analyse causal directed acyclic graphs (DAGs) in your browser." />
+  <!--
+    DAGitty — Copyright (C) 2010-2023 Johannes Textor, Benito van der Zander
+    GNU General Public License v2
+  -->
+  <link rel="stylesheet" href="dags.css" />
 
-    <title>DAGitty v3.1</title>
-    <link rel="stylesheet" type="text/css" href="dags.css" />
+  <script src="js/dagitty.js"></script>
+  <script src="js/example-dags.js"></script>
+  <script src="js/styles/semlike.js"></script>
+  <script src="js/styles/original.js"></script>
+  <script src="js/main.js?v=2023-12-13"></script>
+  <script src="js/base64.js"></script>
+  <script src="js/causal-discovery.js"></script>
 
-    <script src="js/dagitty.js"></script>
-    <script src="js/example-dags.js"></script>
-
-    <script src="js/styles/semlike.js"></script>
-    <script src="js/styles/original.js"></script>
-
-    <script src="js/main.js?v=2023-12-13"></script>
-    <script src="js/base64.js"></script>
-    
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <script>
-    var redraw;
-    var renderer;
-    var layouter;
-    var height = 300;
-    var width = 600;
-    var mouse_on_canvas;
-    var resize_timeout;
-    var mouse_x = 0;
-    var mouse_y = 0;
-
-    var Model = {
-        dag : null, 
-        dag_active_bias_graph : null,
-        dag_ancestor_moral_graph : null,
-        dag_ancestor_pair_graph : null,
-        dag_model_text_data : null
-    };
-
+  <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
+       so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
+  <script>
+    var Model = { dag: null, dag_active_bias_graph: null, dag_ancestor_moral_graph: null,
+                  dag_ancestor_pair_graph: null, dag_model_text_data: null };
     var DAGittyControl;
 
-    function initialize(){
+    function initialize() {
+      DAGitty.setup({ autofocus: true });
+      DAGittyControl = DAGitty.controllers[0];
 
+      GUI.menus = ['model','examples','howto','layout','help'];
+      _.each(GUI.menus, function(t) {
+        document.getElementById('menu_'+t+'_title').addEventListener('click', function(){ menuToggle(t); });
+      });
 
-        DAGitty.setup({autofocus:true});
-        DAGittyControl = DAGitty.controllers[0];
-        
-        GUI.menus = ["model","examples","howto","layout","help"]
-        _.each(GUI.menus,function(t){
-            document.getElementById("menu_"+t+"_title").addEventListener( 'click', 
-                function(){menuToggle(t)} );
-        });
-        
-        DAGittyControl.observe( 'graphchange',
-            function(g){
-                Model.dag = g;
-                document.getElementById("adj_matrix").value = g.toString();
-                // if previously highlighted variable no longer exists, fold up this menu
-                if( !g.getVertex(document.getElementById("variable_id").value) ){
-                    document.getElementById("variable_id").value = ''
-                }
-                displayImplicationInfo( false )
-                causalEffectEstimates( document.getElementById("causal_effect_kind").value )
-                displayGeneralInfo()
-                GUI.refresh_variable_status()
-            }
-        );
-        
-        DAGittyControl.observe( 'graphlayoutchange',
-            function(g){
-                document.getElementById("adj_matrix").value = g.toString();
-            }
-        );
+      DAGittyControl.observe('graphchange', function(g) {
+        Model.dag = g;
+        document.getElementById('adj_matrix').value = g.toString();
+        if (!g.getVertex(document.getElementById('variable_id').value))
+          document.getElementById('variable_id').value = '';
+        displayImplicationInfo(false);
+        causalEffectEstimates(document.getElementById('causal_effect_kind').value);
+        displayGeneralInfo();
+        GUI.refresh_variable_status();
+      });
 
-        DAGittyControl.observe( 'vertex_marked',
-            function( v ){
-                if( v ){
-                    displayShow( 'variable' )
-                    document.getElementById("variable_id").value = v.id
-                    GUI.refresh_variable_status()
-                } else {
-                    if( !Model.dag.getVertex(document.getElementById("variable_id").value) ){
-                        displayHide( 'variable' )
-                    }
-                }
-            }
-        );
+      DAGittyControl.observe('graphlayoutchange', function(g) {
+        document.getElementById('adj_matrix').value = g.toString();
+      });
 
-        var getid = (function(){
-            var regexS = "[\\?&]id=([^&#]*)";
-            var regex = new RegExp(regexS);
-            var results = regex.exec(window.location.search);
-            if(results == null)
-                return "";
-            else
-                return decodeURIComponent(results[1].replace(/\+/g, " "));
-        })();
-
-        if( getid ){
-            // load user-supplied model
-            loadOnline( "dagitty.net/m"+getid );
+      DAGittyControl.observe('vertex_marked', function(v) {
+        if (v) {
+          displayShow('variable');
+          document.getElementById('variable_id').value = v.id;
+          GUI.refresh_variable_status();
         } else {
-            DAGittyControl.graphChanged();
+          if (!Model.dag.getVertex(document.getElementById('variable_id').value))
+            displayHide('variable');
         }
+      });
 
-        document.onkeydown = function(e){
-            if( e.keyCode == 27 ){
-                DAGittyControl.getView().getImplementation().stopMousemove()
-                DAGittyControl.getView().closeDialog()
-            }
+      var getid = (function() {
+        var m = /[?&]id=([^&#]*)/.exec(window.location.search);
+        return m ? decodeURIComponent(m[1].replace(/\+/g,' ')) : '';
+      })();
+
+      if (getid) loadOnline('dagitty.net/m' + getid);
+      else DAGittyControl.graphChanged();
+
+      document.onkeydown = function(e) {
+        if (e.keyCode === 27) {
+          DAGittyControl.getView().getImplementation().stopMousemove();
+          DAGittyControl.getView().closeDialog();
         }
+      };
     }
+
     window.onload = initialize;
-    </script>
-    
+  </script>
+
+  <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
+  <script src="js/ui-enhancements.js"></script>
 </head>
+
 <body>
+
+<!-- Empty-state canvas hint — position:fixed so it doesn't affect canvas.offsetLeft -->
+<div id="canvas-hint" style="display:none" aria-hidden="true">
+  <div class="canvas-hint-inner">
+    <p class="canvas-hint-title">Your canvas is empty</p>
+    <p class="canvas-hint-sub">Click anywhere to add a variable.</p>
+    <p class="canvas-hint-sub">Then click two variables in sequence to draw an arrow.</p>
+    <p class="canvas-hint-sub" style="margin-top:.55em;opacity:.65;font-size:11px">
+      Or try an <strong>Example</strong> from the menu above.
+    </p>
+  </div>
+</div>
 
 <main>
 
-    <ul id="menu">
-      <li><a href="javascript:void(0)" id="menu_model_title">Model</a>
-         <ul id="menu_model" style="z-Index:15">
-            <li><a href="#" onclick="newModel();displayHide('menu_model')">New model</a></li>
-            <li><a href="#" onclick="loadOnlineForm();displayHide('menu_model')">Load from dagitty.net</a></li>
-            <li><a href="#" onclick="exportPNG();displayHide('menu_model')">Export as PNG</a></li>
-            <li><a href="#" onclick="exportJPEG();displayHide('menu_model')">Export as JPEG</a></li>
-            <!--<li><a href="#" onclick="exportSVG();displayHide('menu_model')">Export as SVG</a></li>-->
-            <li><a href="#" onclick="saveOnlineForm();displayHide('menu_model')">Publish on dagitty.net</a></li>
+  <!-- ═══ Menu bar ══════════════════════════════════════════════════════════ -->
+  <ul id="menu" role="menubar" aria-label="Main menu">
 
-            <script>
-                if( false && document.location.protocol == "https:" ){
-                    document.write('<li><a href="#" onclick="saveOnlineForm();displayHide(\'menu_model\')">Publish on dagitty.net</a></li>');
-                    document.write('<li><a href="#" onclick="updateOnlineForm();displayHide(\'menu_model\')">Update on dagitty.net</a></li>');
-                    document.write('<li><a href="#" onclick="deleteOnlineForm();displayHide(\'menu_model\')">Delete on dagitty.net</a></li>');
-            }
+    <li role="none">
+      <a href="javascript:void(0)" id="menu_model_title" role="menuitem" aria-haspopup="true">Model</a>
+      <ul id="menu_model" style="z-index:50" role="menu">
+        <li><a href="#" onclick="newModel();displayHide('menu_model')">New model</a></li>
+        <li><a href="#" onclick="loadOnlineForm();displayHide('menu_model')">Load from dagitty.net</a></li>
+        <li class="menu-sep"></li>
+        <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Generate DAG from data…</a></li>
+        <li class="menu-sep"></li>
+        <li><a href="#" onclick="exportPNG();displayHide('menu_model')">Export as PNG</a></li>
+        <li><a href="#" onclick="exportJPEG();displayHide('menu_model')">Export as JPEG</a></li>
+        <li><a href="#" onclick="exportSVG();displayHide('menu_model')">Export as SVG</a></li>
+        <li><a href="#" onclick="exportTikzCode();displayHide('menu_model')">Export LaTeX/TikZ</a></li>
+        <li class="menu-sep"></li>
+        <li><a href="#" onclick="saveOnlineForm();displayHide('menu_model')">Publish on dagitty.net</a></li>
+      </ul>
+    </li>
 
-               if( false && supportsSVG() ){
-                    document.write( '<li><a href="#" onclick="exportPDF();displayHide(\'menu_model\')">Export as PDF</a></li>' );
-               }
-            </script>
-        <li><a href="#" onclick="exportTikzCode();displayHide('menu_model')">Export LaTeX code</a></li>
-    </ul>
-      </li>
-      <li><a href="javascript:void(0)" id="menu_examples_title">Examples</a>
-       <ul id="menu_examples" style="z-Index:14">
-         <script>
-         for( var i = 0 ; i < examples.length ; i++ ){
-            document.write( "<li><a href=\"#\" onclick=\"loadExample("+i+");displayHide('menu_examples')\">"+examples[i].l+"</a></li>" );
-         }
-         </script>
-       </ul>
-      </li>
-      <li><a href="javascript:void(0)" id="menu_howto_title">How to ...</a>
-         <ul id="menu_howto" style="z-Index:13">
-            <li><a href="#" onclick="how('To add a new variable, click/tap on the canvas.')">Add a variable</a></li>
-            <li><a href="#" onclick="how('To rename a variable, click/tap it and click/tap &quot;rename&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;r&quot; key on your keyboard.')">Rename a variable</a></li>
-            <li><a href="#" onclick="how('To add a new connection, click/tap on the start variable and then on the end variable.')">Add a connection</a></li>
-            <li><a href="#" onclick="how('To delete a variable, click/tap it and then clik/tap &quot;delete&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;delete&quot; or the &quot;d&quot; key on your keyboard.')">Delete a variable</a></li>
-            <li><a href="#" onclick="how('To delete a connection, click/tap on the start variable and then on the end variable.')">Delete a connection</a></li>   
-            <li><a href="#" onclick="how('To save the model, copy-paste the content of the &quot;model code&quot; into your favourite text editor (e.g. &quot;Word&quot;).')">Save a model</a></li>
-            <li><a href="#" onclick="how('To set the exposure variable, click/tap it and check &quot;exposure&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;e&quot; key on your keyboard.')">Set exposure variable</a></li>
-            <li><a href="#" onclick="how('To set the outcome variable, click/tap it and check &quot;outcome&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;o&quot; key on your keyboard.')">Set outcome variable</a></li>
-            <li><a href="#" onclick="how('To toggle adjustment for a variable, click/tap it and check &quot;adjusted&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;a&quot; key on your keyboard.')">Adjust for variable</a></li>
-            <li><a href="#" onclick="how('To toggle selection status for a variable, click/tap it and check &quot;selected&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;s&quot; key on your keyboard.')">Define a selection variable</a></li>
-            <li><a href="#" onclick="how('To toggle observed status for a variable, click/tap it and check &quot;unobserved&quot; in the &quot;variable&quot; tab, or move the mouse over it and press the &quot;u&quot; key on your keyboard.')">Make a variable unobserved (latent)</a></li>
-         </ul>
-      </li>
-      <li><a href="javascript:void(0)" id="menu_layout_title">Layout</a>
-         <ul id="menu_layout" style="z-Index:12">
-            <li><a href="#" onclick="generateSpringLayout();displayHide('menu_layout');return false">Generate layout automatically</a></li>
-         </ul>
-      </li>
-      <li style="border-right:none"><a href="javascript:void(0)" id="menu_help_title">Help</a>
-         <ul id="menu_help" style="z-Index:11">
-            <li><a href="manual-3.x.pdf" target="_blank" onclick="displayHide('menu_help')">Manual</a></li>
-            <li><a href="https://dagitty.net/learn/" target="_blank" onclick="displayHide('menu_help')">Other Resources</a></li>
-         </ul>
-      </li>
-      <li style="float:none; overflow: hidden; border-right: none;"> &nbsp;</li>
-   </ul>
+    <li role="none">
+      <a href="javascript:void(0)" id="menu_examples_title" role="menuitem" aria-haspopup="true">Examples</a>
+      <ul id="menu_examples" style="z-index:50" role="menu">
+        <script>
+          for (var i = 0; i < examples.length; i++)
+            document.write('<li><a href="#" onclick="loadExample('+i+');displayHide(\'menu_examples\')">'+examples[i].l+'</a></li>');
+        </script>
+      </ul>
+    </li>
 
-   <div id="canvas" class="dagitty" data-mutable="true">
+    <li role="none">
+      <a href="javascript:void(0)" id="menu_howto_title" role="menuitem" aria-haspopup="true">How to…</a>
+      <ul id="menu_howto" style="z-index:50" role="menu">
+        <li><a href="#" onclick="how('Click or tap on an empty area of the canvas to add a new variable.')">Add a variable</a></li>
+        <li><a href="#" onclick="how('Click a variable, then use the Rename button in the Variable panel — or hover and press R.')">Rename a variable</a></li>
+        <li><a href="#" onclick="how('Click the start variable, then click the end variable to draw an arrow. Clicking the same pair again removes the arrow.')">Add / remove an arrow</a></li>
+        <li><a href="#" onclick="how('Click a variable to select it, then press Delete in the Variable panel — or hover and press D.')">Delete a variable</a></li>
+        <li><a href="#" onclick="how('Copy the Model code text and paste it into a text file. To reload: paste it back and click Update DAG. Or use Model → Export.')">Save / load a model</a></li>
+        <li><a href="#" onclick="how('Click a variable and check &quot;exposure&quot; in the Variable panel (or press E). This marks the cause you are studying.')">Set the exposure (cause)</a></li>
+        <li><a href="#" onclick="how('Click a variable and check &quot;outcome&quot; in the Variable panel (or press O). This marks the effect you are studying.')">Set the outcome (effect)</a></li>
+        <li><a href="#" onclick="how('Adjusted = controlled for in your model. Click a variable and check &quot;adjusted&quot; (or press A). The right panel shows whether your choice is sufficient.')">Mark a variable as adjusted</a></li>
+        <li><a href="#" onclick="how('Sample selection marks a variable that determines who is in your sample. Conditioning on a collider can introduce bias. Click a variable and check &quot;sample selection&quot; (or press S).')">Mark a selection variable</a></li>
+        <li><a href="#" onclick="how('Unobserved (latent) = exists in the causal model but is not measured. Click a variable and check &quot;unobserved&quot; (or press U). Shown with a dashed border.')">Mark as unobserved</a></li>
+        <li><a href="#" onclick="how('Press Ctrl+Z to undo and Ctrl+Y (or Ctrl+Shift+Z) to redo. Undo/Redo buttons are also in the toolbar.')">Undo / Redo</a></li>
+      </ul>
+    </li>
+
+    <li role="none">
+      <a href="javascript:void(0)" id="menu_layout_title" role="menuitem" aria-haspopup="true">Layout</a>
+      <ul id="menu_layout" style="z-index:50" role="menu">
+        <li><a href="#" onclick="generateSpringLayout();displayHide('menu_layout');return false">Auto-arrange nodes</a></li>
+      </ul>
+    </li>
+
+    <li role="none" style="border-right:none">
+      <a href="javascript:void(0)" id="menu_help_title" role="menuitem" aria-haspopup="true">Help</a>
+      <ul id="menu_help" style="z-index:50" role="menu">
+        <li><a href="manual-3.x.pdf" target="_blank" rel="noopener" onclick="displayHide('menu_help')">User Manual (PDF)</a></li>
+        <li><a href="https://dagitty.net/learn/" target="_blank" rel="noopener" onclick="displayHide('menu_help')">Tutorials &amp; Resources</a></li>
+      </ul>
+    </li>
+
+    <!-- Undo / Redo -->
+    <li class="menu-tools" role="none" aria-label="Undo and redo">
+      <button id="btn-undo" type="button" title="Undo (Ctrl+Z)" onclick="UndoRedo.undo()" disabled>↩ Undo</button>
+      <button id="btn-redo" type="button" title="Redo (Ctrl+Y)" onclick="UndoRedo.redo()" disabled>Redo ↪</button>
+    </li>
+
+    <!-- Beginner / Advanced -->
+    <li id="menu-mode-li" role="none">
+      <button id="btn-beginner-mode" type="button" aria-pressed="false"
+              title="Switch between Beginner (simplified) and Advanced (all options) mode"
+              onclick="BeginnerMode.toggle()">Beginner mode</button>
+    </li>
+
+    <li class="app-title" aria-hidden="true">DAGitty v3.1</li>
+  </ul>
+
+  <!-- ═══ Canvas ════════════════════════════════════════════════════════════ -->
+  <div id="canvas" class="dagitty" data-mutable="true"
+       title="Click to add variables · Click two variables to connect/disconnect · Drag to reposition">
 A [selected,pos="-2.200,-1.520"]
 B [pos="1.400,-1.460"]
 D [outcome,pos="1.400,1.621"]
@@ -208,212 +191,364 @@ A -&gt; Z [pos="-0.791,-1.045"]
 B -&gt; D
 B -&gt; Z [pos="0.680,-0.496"]
 E -&gt; D
-   </div>
+  </div>
 
 </main>
 
-<aside>
 
-   <div id="llegend">
+<!-- ═══ Sidebars ══════════════════════════════════════════════════════════ -->
+<aside aria-label="Diagram properties and analysis">
 
-    <h3 onclick="displayToggle('variable')"><img src="images/arrow-down.png" alt="" id="a_variable">
-        Variable</h3>
-   <div id="variable" style="display:block">
+  <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
+  <div id="llegend">
 
-      <form autocomplete="off">
-    <p>
-        <span id="variable_label" style="font-weight:bold"></span>
-    </p>
-      <p><input type="checkbox" checked="checked" id="variable_exposure"
-         onclick="GUI.set_variable_status('source',this.checked)" />
-            <label for="variable_exposure">exposure</label></p>
-      <p><input type="checkbox" checked="checked" id="variable_outcome"
-         onclick="GUI.set_variable_status('target',this.checked)" />
-            <label for="variable_outcome">outcome</label></p>
-      <p><input type="checkbox" checked="checked" id="variable_adjusted"
-         onclick="GUI.set_variable_status('adjustedNode',this.checked)" />
-            <label for="variable_adjusted">adjusted</label></p>
-      <p><input type="checkbox" checked="checked" id="variable_selected"
-         onclick="GUI.set_variable_status('selectedNode',this.checked)" />
-            <label for="variable_selected">selected</label></p>
-      <p><input type="checkbox" checked="checked" id="variable_unobserved"
-         onclick="GUI.set_variable_status('latentNode',this.checked)" />
-            <label for="variable_unobserved">unobserved</label></p>
-
-    <input type="hidden" id="variable_id" value="">
-
-    <p>
-        <button type="button" onclick="DAGittyControl.deleteVertex(document.getElementById('variable_id').value)">delete</button>
-        <button type="button" onclick="DAGittyControl.getView().renameVertexDialog(document.getElementById('variable_id').value)">rename</button>
-    </p>
-
-      </form>
-
-
-
-   </div>
-   
-  
-   <h3 onclick="displayToggle('viewmode')"><img src="images/arrow-down.png" alt="" id="a_view">
-        View mode</h3>
-   <div id="viewmode" style="display:block">
-
-      <form autocomplete="off">
-      <p><input type="radio" checked="checked" id="dagview_normal" name="dagview"
-         onclick="GUI.set_view_mode(this.value)" value="normal" /> 
-            <label for="dagview_normal">normal</label></p>
-      <p><input type="radio" name="dagview" id="dagview_moral"
-         onclick="GUI.set_view_mode(this.value)" value="moral"/>
-            <label for="dagview_moral">moral graph</label></p>
-      <p><input type="radio" name="dagview" id="dagview_dependency"
-         onclick="GUI.set_view_mode(this.value)" value="dependency"/>
-            <label for="dagview_dependency">correlation graph</label></p>
-      <p><input type="radio" name="dagview" id="dagview_equivalence"
-         onclick="GUI.set_view_mode(this.value)" value="equivalence"/>
-            <label for="dagview_equivalence">equivalence class</label></p>
-      </form>
-
-   </div>
-   
-   <h3 onclick="displayToggle('effects')"><img src="images/arrow-down.png" alt="" id="a_effects"> Effect analysis</h3>
-   <div id="effects" style="display:block">
-      <form autocomplete="off">
-      <p><input type="checkbox" id="highlight_puredirect"
-         onclick="GUI.set_highlight_puredirect(this.checked)"/>
-            <label for="highlight_puredirect">atomic direct effects</label></p>
-      </form>
-   </div>
-
-   <h3 onclick="displayToggle('dagstyle')"><img src="images/arrow-down.png" alt="" id="a_dagstyle">
-        Diagram style</h3>
-   <div id="dagstyle" style="display:block">
-      <form autocomplete="off">
-      <p><input type="radio" checked="checked" id="dagstyle_original" name="dagstyle"
-         onclick="GUI.set_style('original')" /> 
-            <label for="dagstyle_original">classic</label></p>
-      <p><input type="radio" name="dagstyle" id="dagstyle_semlike"
-         onclick="GUI.set_style('semlike')"/>
-            <label for="dagstyle_semlike">SEM-like</label></p>
-      </form>
-   </div>
-
-   <h3 onclick="displayToggle('coloring')"><img src="images/arrow-down.png" alt="" id="a_coloring"> Coloring</h3>
-   <div id="coloring" style="display:block">
-      <form autocomplete="off">
-      <p><input type="checkbox" checked="checked" id="highlight_causal"
-         onclick="GUI.set_highlight_causal(this.checked)" />
-            <label for="highlight_causal">causal paths</label></p>
-      <p><input type="checkbox" checked="checked" id="highlight_biasing"
-         onclick="GUI.set_highlight_biasing(this.checked)"/>
-            <label for="highlight_biasing">biasing paths</label></p>
-      <p><input type="checkbox" checked="checked" id="highlight_ancestral"
-         onclick="GUI.set_highlight_ancestors(this.checked)"/>
-            <label for="highlight_ancestral">ancestral structure</label></p>
-      </form>
-   </div>
-
-
-
-   <h3 onclick="displayToggle('legend')"><img src="images/arrow-down.png" alt="" id="a_legend"> Legend</h3>
-   <div id="legend" style="display:block">
-      <p>
-        <img id="liexposure" src="images/legend/original/exposure.png" alt="" />
-        exposure
-      </p>
-      <p>
-        <img id="lioutcome" src="images/legend/original/outcome.png" alt="" />
-         outcome
-      </p>
-      <div id="legend_ancestors">
-      <p>
-         <img id="lilnode" src="images/legend/original/lnode.png" alt="" />
-         ancestor of exposure
-      </p>
-      <p>
-        <img id="lirnode" src="images/legend/original/rnode.png" alt="" />
-         ancestor of outcome
-      </p>
-      <p>
-        <img id="limnode"  src="images/legend/original/mnode.png" alt="" />
-        ancestor of exposure <em>and</em> outcome
-      </p> 
-      </div>
-      <p>
-        <img id="liadjustednode" src="images/legend/original/adjustednode.png" alt="" />
-        adjusted variable
-      </p>
-      <p>
-        <img id="lilatentnode" src="images/legend/original/latentnode.png" alt="" />
-        unobserved (latent)
-      </p>
-      <p>
-        <img id="liother" src="images/legend/original/other.png" alt="" />
-         other variable
-      </p>
-      <p id="legend_causal">
-        <img id="licausalpath" src="images/legend/original/causalpath.png" alt="" />
-        causal path
-      </p>
-      <p id="legend_biasing">
-        <img id="libiasingpath" src="images/legend/original/biasingpath.png" alt="" />
-        biasing path
-      </p>
-   </div>
-
-  </div>
-
-
-   <div id="rlegend">
-        <h3 onclick="displayToggle('causal_effect_block')">
-            <img src="images/arrow-down.png" alt="" id="a_causal_effect" />
-            Causal effect identification
-        </h3>
-
-    <div id="causal_effect_block">
-        <p>
-            <select id="causal_effect_kind" onchange="causalEffectEstimates(this.value)">
-                <option value="adj_total">Adjustment (total effect)</option>
-                <option value="adj_causalodds">Adjustment (causal odds ratio)</option>
-                <option value="adj_direct">Adjustment (direct effect)</option>
-                <option value="instrument">Instrumental variable</option>
-                <!--<option value="treeid">TreeId</option>-->
-            </select>
+    <!-- Quick Start -->
+    <h3 onclick="displayToggle('quickstart')">
+      <span class="chev" id="a_quickstart" data-open="0"></span>
+      Quick Start
+    </h3>
+    <div id="quickstart" style="display:none">
+      <div class="qs-card">
+        <ol>
+          <li><strong>Click the canvas</strong> to add a variable (node).</li>
+          <li><strong>Click one variable, then another</strong> to draw an arrow.</li>
+          <li>Mark one as <span class="qs-term">exposure</span> (cause) and one as <span class="qs-term">outcome</span> (effect) below.</li>
+          <li>Check the <span class="qs-term">Causal effect</span> panel on the right for adjustment advice.</li>
+        </ol>
+        <p class="qs-shortcuts">
+          <kbd>E</kbd> exposure &nbsp;
+          <kbd>O</kbd> outcome &nbsp;
+          <kbd>A</kbd> adjust &nbsp;
+          <kbd>R</kbd> rename &nbsp;
+          <kbd>D</kbd> delete &nbsp;
+          <kbd>Ctrl+Z</kbd> undo
         </p>
-        <div id="causal_effect" style="display:block">
-
-        </div>
+      </div>
     </div>
 
-    <h3 onclick="displayToggle('testable_implications')"><img src="images/arrow-down.png" alt="" id="a_testable_implications" />  Testable implications</h3>
+    <!-- Variable -->
+    <h3 onclick="displayToggle('variable')">
+      <span class="chev" id="a_variable" data-open="1"></span>
+      Variable
+    </h3>
+    <div id="variable" style="display:block">
+      <form autocomplete="off">
+        <p class="var-name-row"><span id="variable_label"></span></p>
 
-    <div id="testable_implications" style="display:block">
+        <p>
+          <input type="checkbox" id="variable_exposure" onclick="GUI.set_variable_status('source',this.checked)" />
+          <label for="variable_exposure">exposure</label>
+          <span class="help-tip" title="The cause whose effect you are studying. Keyboard: E">?</span>
+        </p>
+        <p>
+          <input type="checkbox" id="variable_outcome" onclick="GUI.set_variable_status('target',this.checked)" />
+          <label for="variable_outcome">outcome</label>
+          <span class="help-tip" title="The effect variable you want to understand. Keyboard: O">?</span>
+        </p>
+        <p>
+          <input type="checkbox" id="variable_adjusted" onclick="GUI.set_variable_status('adjustedNode',this.checked)" />
+          <label for="variable_adjusted">adjusted</label>
+          <span class="help-tip" title="Mark if you control for this variable in your analysis (e.g. covariate in regression). DAGitty checks whether this is sufficient. Keyboard: A">?</span>
+        </p>
+        <p>
+          <input type="checkbox" id="variable_selected" onclick="GUI.set_variable_status('selectedNode',this.checked)" />
+          <label for="variable_selected">sample selection</label>
+          <span class="help-tip" title="Marks who is included in your sample. Conditioning on a collider introduces selection bias. Keyboard: S">?</span>
+        </p>
+        <p>
+          <input type="checkbox" id="variable_unobserved" onclick="GUI.set_variable_status('latentNode',this.checked)" />
+          <label for="variable_unobserved">unobserved (latent)</label>
+          <span class="help-tip" title="Exists in the causal model but is not measured. Shown with a dashed border. Keyboard: U">?</span>
+        </p>
 
-    </div>
-
-    <h3 onclick="displayToggle('model_data')"><img src="images/arrow-down.png" alt="" id="a_model_data" />  Model code</h3>
-    <div id="model_data" style="display:block">
-      <form name="model_data_frm">
-      <textarea rows="10" cols="35" name="adj_matrix" id="adj_matrix"
-         onkeydown="if(this.value != Model.dag_model_text_data){ displayShow('model_refresh');this.style.backgroundColor='#fec'; }"></textarea>
+        <input type="hidden" id="variable_id" value="">
+        <p class="var-btn-row">
+          <button type="button" class="btn-danger" title="Remove this variable and its arrows"
+            onclick="DAGittyControl.deleteVertex(document.getElementById('variable_id').value)">Delete</button>
+          <button type="button" title="Rename this variable"
+            onclick="DAGittyControl.getView().renameVertexDialog(document.getElementById('variable_id').value)">Rename</button>
+        </p>
       </form>
-      <p id="model_refresh" style="display:none">You have modified the model code. To
-      draw the modified model, click here: <button onclick="loadDAGFromTextData()">Update DAG</button></p>
     </div>
 
-   <h3 onclick="displayToggle('summary')"><img src="images/arrow-down.png" alt="" id="a_summary"> Summary</h3>
-   <div id="summary" style="display:block">
-      <div id="info_cycle"> </div>
-      <table id="info_summary">
-         <tr><td>exposure(s)</td><td class="info" id="info_exposure">not set</td></tr>
-         <tr><td>outcome(s)</td><td class="info" id="info_outcome">not set</td></tr>
-         <tr><td>covariates</td><td class="info" id="info_covariates">0</td></tr>
-         <tr><td>causal paths</td><td class="info" id="info_frontdoor">0</td></tr>
-      </table>
-   </div>
+    <!-- View mode -->
+    <h3 onclick="displayToggle('viewmode')">
+      <span class="chev" id="a_view" data-open="1"></span>
+      View mode
+    </h3>
+    <div id="viewmode" style="display:block">
+      <form autocomplete="off">
+        <p>
+          <input type="radio" checked id="dagview_normal" name="dagview" value="normal" onclick="GUI.set_view_mode(this.value)" />
+          <label for="dagview_normal">normal (DAG)</label>
+        </p>
+        <p>
+          <input type="radio" id="dagview_moral" name="dagview" value="moral" onclick="GUI.set_view_mode(this.value)" />
+          <label for="dagview_moral">moral graph</label>
+          <span class="help-tip" title="Undirected graph where parents of common children are connected. Used in Markov network analysis.">?</span>
+        </p>
+        <p>
+          <input type="radio" id="dagview_dependency" name="dagview" value="dependency" onclick="GUI.set_view_mode(this.value)" />
+          <label for="dagview_dependency">correlation graph</label>
+          <span class="help-tip" title="Shows which pairs of variables are statistically associated (not d-separated).">?</span>
+        </p>
+        <p>
+          <input type="radio" id="dagview_equivalence" name="dagview" value="equivalence" onclick="GUI.set_view_mode(this.value)" />
+          <label for="dagview_equivalence">equivalence class</label>
+          <span class="help-tip" title="CPDAG: all DAGs with the same conditional independence relationships — indistinguishable from observational data alone.">?</span>
+        </p>
+      </form>
+    </div>
 
-   </div>
+    <!-- Effect analysis -->
+    <h3 onclick="displayToggle('effects')">
+      <span class="chev" id="a_effects" data-open="1"></span>
+      Effect analysis
+    </h3>
+    <div id="effects" style="display:block">
+      <form autocomplete="off">
+        <p>
+          <input type="checkbox" id="highlight_puredirect" onclick="GUI.set_highlight_puredirect(this.checked)" />
+          <label for="highlight_puredirect">atomic direct effects</label>
+          <span class="help-tip" title="Highlight direct-effect paths not mediated by any other modelled variable.">?</span>
+        </p>
+      </form>
+    </div>
+
+    <!-- Diagram style -->
+    <h3 onclick="displayToggle('dagstyle')">
+      <span class="chev" id="a_dagstyle" data-open="1"></span>
+      Diagram style
+    </h3>
+    <div id="dagstyle" style="display:block">
+      <form autocomplete="off">
+        <p>
+          <input type="radio" checked id="dagstyle_original" name="dagstyle" onclick="GUI.set_style('original')" />
+          <label for="dagstyle_original">classic</label>
+        </p>
+        <p>
+          <input type="radio" id="dagstyle_semlike" name="dagstyle" onclick="GUI.set_style('semlike')" />
+          <label for="dagstyle_semlike">SEM-like</label>
+          <span class="help-tip" title="Structural Equation Model style: rectangles for observed, circles for latent variables.">?</span>
+        </p>
+      </form>
+    </div>
+
+    <!-- Path highlighting -->
+    <h3 onclick="displayToggle('coloring')">
+      <span class="chev" id="a_coloring" data-open="1"></span>
+      Path highlighting
+    </h3>
+    <div id="coloring" style="display:block">
+      <form autocomplete="off">
+        <p>
+          <input type="checkbox" checked id="highlight_causal" onclick="GUI.set_highlight_causal(this.checked)" />
+          <label for="highlight_causal">causal paths</label>
+          <span class="help-tip" title="Directed paths along which the causal effect flows from exposure to outcome.">?</span>
+        </p>
+        <p>
+          <input type="checkbox" checked id="highlight_biasing" onclick="GUI.set_highlight_biasing(this.checked)" />
+          <label for="highlight_biasing">biasing paths</label>
+          <span class="help-tip" title="Non-causal paths (backdoor paths) that create spurious associations. Must be blocked by adjustment.">?</span>
+        </p>
+        <p>
+          <input type="checkbox" checked id="highlight_ancestral" onclick="GUI.set_highlight_ancestors(this.checked)" />
+          <label for="highlight_ancestral">ancestral structure</label>
+          <span class="help-tip" title="Colour nodes by role: blue = ancestor of exposure, red = ancestor of outcome, purple = ancestor of both (potential confounder).">?</span>
+        </p>
+      </form>
+    </div>
+
+    <!-- Legend -->
+    <h3 onclick="displayToggle('legend')">
+      <span class="chev" id="a_legend" data-open="1"></span>
+      Legend
+    </h3>
+    <div id="legend" style="display:block">
+      <p><img id="liexposure" src="images/legend/original/exposure.png" alt="" /> exposure (cause)</p>
+      <p><img id="lioutcome"  src="images/legend/original/outcome.png"  alt="" /> outcome (effect)</p>
+      <div id="legend_ancestors">
+        <p><img id="lilnode" src="images/legend/original/lnode.png" alt="" /> ancestor of exposure</p>
+        <p><img id="lirnode" src="images/legend/original/rnode.png" alt="" /> ancestor of outcome</p>
+        <p><img id="limnode" src="images/legend/original/mnode.png" alt="" /> ancestor of both</p>
+      </div>
+      <p><img id="liadjustednode" src="images/legend/original/adjustednode.png" alt="" /> adjusted (controlled for)</p>
+      <p><img id="lilatentnode"   src="images/legend/original/latentnode.png"   alt="" /> unobserved (latent)</p>
+      <p><img id="liother"        src="images/legend/original/other.png"        alt="" /> other variable</p>
+      <p id="legend_causal"><img  id="licausalpath"   src="images/legend/original/causalpath.png"   alt="" /> causal path</p>
+      <p id="legend_biasing"><img id="libiasingpath"  src="images/legend/original/biasingpath.png"  alt="" /> biasing path</p>
+    </div>
+
+  </div><!-- #llegend -->
+
+
+  <!-- ── Right sidebar ──────────────────────────────────────────────────── -->
+  <div id="rlegend">
+
+    <!-- Causal effect identification -->
+    <h3 onclick="displayToggle('causal_effect_block')">
+      <span class="chev" id="a_causal_effect" data-open="1"></span>
+      Causal effect identification
+    </h3>
+    <div id="causal_effect_block">
+      <p class="rlegend-hint">Set an <strong>exposure</strong> and <strong>outcome</strong>, then choose a strategy.</p>
+      <p style="margin:.2em .75em .3em">
+        <select id="causal_effect_kind" onchange="causalEffectEstimates(this.value)">
+          <option value="adj_total">Adjustment — total effect</option>
+          <option value="adj_causalodds">Adjustment — causal odds ratio</option>
+          <option value="adj_direct">Adjustment — direct effect</option>
+          <option value="instrument">Instrumental variable (IV)</option>
+        </select>
+      </p>
+      <div id="causal_effect"></div>
+    </div>
+
+    <!-- Testable implications -->
+    <h3 onclick="displayToggle('testable_implications')">
+      <span class="chev" id="a_testable_implications" data-open="1"></span>
+      Testable implications
+      <span class="help-tip" style="margin-left:auto;flex-shrink:0"
+        title="Conditional independencies your DAG predicts. If violated in your data, the model may be mis-specified.">?</span>
+    </h3>
+    <div id="testable_implications"></div>
+
+    <!-- Model code -->
+    <h3 onclick="displayToggle('model_data')">
+      <span class="chev" id="a_model_data" data-open="1"></span>
+      Model code
+    </h3>
+    <div id="model_data">
+      <p class="rlegend-hint">Copy to save · paste back and click <em>Update</em> to reload.</p>
+      <form name="model_data_frm" style="padding:0 .75em .2em">
+        <textarea rows="9" name="adj_matrix" id="adj_matrix"
+          onkeydown="if(this.value!=Model.dag_model_text_data){displayShow('model_refresh');this.style.backgroundColor='#fffbeb';}"></textarea>
+      </form>
+      <div class="model-code-actions">
+        <button type="button" onclick="loadDAGFromTextData()">Update</button>
+        <button type="button" class="btn-ghost" onclick="downloadModel()">Download</button>
+      </div>
+      <div id="model_refresh" style="display:none">
+        Code edited — click <strong>Update</strong> to apply.
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <h3 onclick="displayToggle('summary')">
+      <span class="chev" id="a_summary" data-open="1"></span>
+      Summary
+    </h3>
+    <div id="summary">
+      <div id="info_cycle"></div>
+      <table id="info_summary">
+        <tr><td title="The cause variable being studied">exposure(s)</td>    <td class="info" id="info_exposure">not set</td></tr>
+        <tr><td title="The effect variable being studied">outcome(s)</td>    <td class="info" id="info_outcome">not set</td></tr>
+        <tr><td title="Variables that are neither exposure nor outcome">covariates</td>   <td class="info" id="info_covariates">0</td></tr>
+        <tr><td title="Directed paths from exposure to outcome">causal paths</td><td class="info" id="info_frontdoor">0</td></tr>
+      </table>
+    </div>
+
+  </div><!-- #rlegend -->
 
 </aside>
+
+
+<!-- ═══ Data Discovery Modal ══════════════════════════════════════════════ -->
+<div id="data-discovery-modal" class="modal-overlay" role="dialog"
+     aria-modal="true" aria-labelledby="data-modal-title" style="display:none">
+  <div class="modal-dialog">
+
+    <div class="modal-header">
+      <h2 id="data-modal-title">Generate DAG from Data</h2>
+      <button type="button" class="modal-close" aria-label="Close" onclick="DataModal.close()">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-intro">
+        Upload a data file to automatically suggest a causal graph using the
+        <strong>PC algorithm</strong> (skeleton + collider orientation) combined with
+        <strong>LiNGAM-inspired</strong> pairwise orientation (non-Gaussianity of residuals).
+      </p>
+
+      <div class="modal-callout">
+        ⚠ Causal discovery is a suggestion, not ground truth. Always validate the result
+        against domain knowledge. Works best with 100+ observations and linear relationships.
+      </div>
+
+      <div class="modal-field">
+        <label for="data-csv-input" class="modal-label">
+          Data file
+          <span class="modal-label-hint">— CSV, TSV, Excel (.xlsx/.xls) or plain text. First row = column headers.</span>
+        </label>
+        <input type="file" id="data-csv-input"
+               accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsb,.ods,text/csv,text/tab-separated-values"
+               onchange="DataModal.handleFile(this.files[0])">
+        <p style="font-size:11px;color:#94a3b8;margin-top:.35em">
+          Python pickle (.pkl): export first with <code>df.to_csv('data.csv', index=False)</code>
+        </p>
+      </div>
+
+      <div id="data-var-select" class="modal-field" style="display:none">
+        <label class="modal-label">
+          Variables to include
+          <span class="modal-label-hint">— uncheck columns you want to exclude from analysis</span>
+        </label>
+        <div id="data-var-list" class="var-select-grid"></div>
+      </div>
+
+      <div class="modal-field">
+        <label for="data-alpha" class="modal-label">
+          Significance level for independence tests
+          <span class="help-tip" title="Lower = stricter, fewer edges. Higher = more permissive, more edges.">?</span>
+        </label>
+        <select id="data-alpha">
+          <option value="0.01">0.01 — strict (fewer, more certain edges)</option>
+          <option value="0.05" selected>0.05 — standard</option>
+          <option value="0.10">0.10 — permissive (more, less certain edges)</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label for="data-speed" class="modal-label">
+          Analysis speed
+          <span class="help-tip"
+            title="Fast: caps conditioning sets at depth 2 and pre-prunes weak correlations — finishes in seconds even with 20+ variables. Standard: depth 3 (recommended). Thorough: depth 5 — may freeze with many variables.">?</span>
+        </label>
+        <select id="data-speed">
+          <option value="fast">Fast — depth 2, weak-edge pruning (large / many variables)</option>
+          <option value="standard" selected>Standard — depth 3 (recommended)</option>
+          <option value="thorough">Thorough — depth 5 (small datasets only)</option>
+        </select>
+      </div>
+
+      <div class="modal-field">
+        <label class="modal-label modal-label-inline">
+          <input type="checkbox" id="data-use-lingam" checked>
+          Apply LiNGAM orientation to resolve ambiguous edge directions
+          <span class="help-tip"
+            title="Uses residual non-Gaussianity to orient edges left ambiguous by the PC algorithm. Most useful for non-normally distributed variables.">?</span>
+        </label>
+      </div>
+
+      <div id="data-modal-status" class="modal-status" aria-live="polite" aria-atomic="true"></div>
+
+      <div id="data-modal-preview" class="modal-preview" style="display:none">
+        <p class="modal-preview-title">Discovered edges</p>
+        <div id="data-modal-preview-content"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" onclick="DataModal.close()">Close</button>
+      <button type="button" id="btn-cancel-analysis" class="btn-danger"
+              onclick="DataModal.cancelAnalysis()" style="display:none">Stop Analysis</button>
+      <button type="button" id="btn-run-analysis" onclick="DataModal.runAnalysis()" disabled>Run Analysis</button>
+      <button type="button" id="btn-import-dag"   onclick="DataModal.importDAG()"  disabled>Import to Canvas</button>
+      <button type="button" id="btn-download-model" class="btn-secondary"
+              onclick="DataModal.downloadModel()" style="display:none">Download Model</button>
+    </div>
+
+  </div>
+</div>
 
 </body>
 </html>

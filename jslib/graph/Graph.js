@@ -644,36 +644,6 @@ var Graph = Class.extend({
 			}, this )
 		}, this )
 		return r
-	},
-	
-	sourceConnectedToTarget: function(){
-		if( !this.getSource() || !this.getTarget() ){
-			return false
-		}
-		if( arguments.length == 0 ){
-			return this.sourceConnectedToTarget( this.getSource(), this.getTarget() )
-		} else if( arguments.length == 1 ){
-			var avoid_nodes = arguments[0]
-			this.clearTraversalInfo()
-			_.each( avoid_nodes, function(v){ 
-				this.getVertex(v) && (this.getVertex(v).traversal_info.visited = true)
-			}, this )
-			return this.sourceConnectedToTarget( this.getSource(), this.getTarget() )
-		} else {
-			var s = arguments[0], t = arguments[1]
-			if( !s.traversal_info ){ this.clearTraversalInfo() } 
-			if( s == t ){
-				return true
-			}
-			s.traversal_info.visited = true
-			if( s.getChildren().any( function( n ){
-				return !n.traversal_info.visited && !n.traversal_info.adjusted_for 
-				&& this.sourceConnectedToTarget( n, t ) }, this ) ){
-				return true
-			}
-			s.traversal_info.visited = false
-			return false
-		}
 	}
 } ); // Class.create
 
