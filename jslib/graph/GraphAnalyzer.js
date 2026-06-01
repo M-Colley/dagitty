@@ -400,7 +400,7 @@ var GraphAnalyzer = {
 		if( S == null ){
 			S = g.getSelectedNodes()
 		}
-		var Zg = _.map( Z, Graph.getVertex, g )
+		var Zg = _.map( Z, g.getVertex, g )
 		if( _.intersection( this.dpcp(g), Zg ).length > 0 ){
 			return false
 		}
@@ -427,7 +427,7 @@ var GraphAnalyzer = {
 		} else {
 		}
 		var gbd = GraphTransformer.indirectGraph(g)
-		return !this.dConnected( gbd, gbd.getSources(), gbd.getTargets(), _.map( Z, Graph.getVertex, gbd ) )
+		return !this.dConnected( gbd, gbd.getSources(), gbd.getTargets(), _.map( Z, gbd.getVertex, gbd ) )
 	},
 
 	isAdjustmentSetCausalOddsRatio : function( g, Z, S ){
@@ -441,12 +441,12 @@ var GraphAnalyzer = {
 		if( Z == null ){
 			Z = g.getAdjustedNodes()
 		} else {
-			Z = _.map( Z, Graph.getVertex, g )
+			Z = _.map( Z, g.getVertex, g )
 		}
 		if( S == null ){
 			S = g.getSelectedNodes()
 		} else {
-			S = _.map( S, Graph.getVertex, g )
+			S = _.map( S, g.getVertex, g )
 		}
 		if( S.length != 1 ){
 			return null
@@ -487,7 +487,7 @@ var GraphAnalyzer = {
 		var gbd = GraphTransformer.backDoorGraph(gg)
 		var S = gg.getSelectedNodes()
 		if( S.length > 0 ){
-			if( this.dConnected( gbd, gbd.getTargets(), _.map(S, Graph.getVertex, gbd ) ) ){
+			if( this.dConnected( gbd, gbd.getTargets(), _.map(S, gbd.getVertex, gbd ) ) ){
 				return []
 			} else {
 				_.each( S, function(s){ gbd.removeSelectedNode( s ); gbd.addAdjustedNode( s ) } )			
@@ -496,8 +496,8 @@ var GraphAnalyzer = {
 
 		var gam = GraphTransformer.moralGraph( GraphTransformer.ancestorGraph( gbd ) )
 
-		var adjusted_nodes = _.map( gg.getAdjustedNodes(), Graph.getVertex, gam )
-		var latent_nodes = _.map( gg.getLatentNodes().concat( this.dpcp(gg) ), Graph.getVertex, gam )
+		var adjusted_nodes = _.map( gg.getAdjustedNodes(), gam.getVertex, gam )
+		var latent_nodes = _.map( gg.getLatentNodes().concat( this.dpcp(gg) ), gam.getVertex, gam )
 
 		// at this point, "latent_nodes" may contain 
 		// undefined values because not all adjusted or latent nodes may have beeen
@@ -509,9 +509,9 @@ var GraphAnalyzer = {
 
 		// Give back vertex objects from original graph, rather than the constructed 
 		// ancestor moral graph.
-		S = _.map( S, Graph.getVertex, g )
+		S = _.map( S, g.getVertex, g )
 		for( i = 0 ; i < r.length ; i ++ ){
-			r[i] = _.map( r[i], Graph.getVertex, g )
+			r[i] = _.map( r[i], g.getVertex, g )
 			r[i] = _.difference( r[i], S )
 		}
 		return r
@@ -651,13 +651,13 @@ var GraphAnalyzer = {
 	  * that are consistent with the input graph. */
 	isDG : function( g ){
 		var cpdag = GraphTransformer.dependencyGraph2CPDAG( g ), p1, p2
-		if( g.edges.all( function( e ){
-			if( typeof cpdag.getEdge( e.v1.id, e.v2.id, 
-				Graph.Edgetype.Undirected ) == "undefined" ){ 
-				p1 = cpdag.getVertex(e.v1.id).getParents().pluck("id")
-				p2 = cpdag.getVertex(e.v2.id).getParents().pluck("id")
-				if( !p1.include(e.v2.id) && !p2.include(e.v1.id) 
-						&& p1.intersect(p2).length == 0 ){
+		if( _.every( g.edges, function( e ){
+			if( typeof cpdag.getEdge( e.v1.id, e.v2.id,
+				Graph.Edgetype.Undirected ) == "undefined" ){
+				p1 = _.pluck( cpdag.getVertex(e.v1.id).getParents(), "id" )
+				p2 = _.pluck( cpdag.getVertex(e.v2.id).getParents(), "id" )
+				if( !_.contains(p1,e.v2.id) && !_.contains(p2,e.v1.id)
+						&& _.intersection(p1,p2).length == 0 ){
 					return false
 				}
 			}
