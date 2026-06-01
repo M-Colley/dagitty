@@ -1,3 +1,30 @@
+# DAGitty — accessibility-focused fork
+
+> A beginner-friendly version of the [DAGitty](https://dagitty.net) causal-diagram editor.
+>
+> **▶ Try it live (free, no install): https://m-colley.github.io/dagitty/**
+
+This fork reworks the DAGitty browser GUI to make building and documenting causal diagrams (DAGs)
+approachable for people new to causal inference, while keeping all of the original analysis power.
+
+**What's new in the GUI**
+
+- 🎨 Modern, responsive redesign with automatic light/dark mode
+- 🧭 **Interactive guided tutorial** for first-time users (*Help → Interactive tutorial*, and a one-time prompt on first visit)
+- 📝 **"Assumptions for your paper"** — a one-click, plain-language statement of the (often untestable) assumptions your diagram requires to read a result as causal, ready to paste into a methods or limitations section
+- 💬 Plain-language analysis output (e.g. *“Your chosen controls block all confounding”* instead of *“Correctly adjusted”*)
+- 🧰 Beginner / Advanced mode, undo / redo, empty-canvas hints, and inline help on every concept
+- 📂 Machine-readable model code plus PNG / JPEG / SVG / LaTeX export and one-click download
+- 🔬 Optional **Generate DAG from data** (in-browser PC + LiNGAM causal discovery)
+
+The diagram editing and analysis engine is the original DAGitty by Johannes Textor & Benito van der Zander
+(GNU GPL v2). The full upstream project description follows.
+
+The live site is published automatically from [`gui/`](gui) via GitHub Pages on every push to `master`
+(see [`.github/workflows/pages.yml`](.github/workflows/pages.yml)).
+
+---
+
 # dagitty
 
 This is a collection of algorithms, a GUI frontend and an R package for analyzing
