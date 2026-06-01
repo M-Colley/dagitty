@@ -6,7 +6,8 @@
  *     — orients v-structures and applies Meek orientation rules R1-R3
  *
  *  2. Pairwise LiNGAM orientation heuristic
- *     (inspired by Hyvärinen & Smith 2013, simplified for the browser)
+ *     (LiNGAM: Shimizu et al. 2006, https://www.jmlr.org/papers/v7/shimizu06a.html;
+ *      pairwise variant inspired by Hyvärinen & Smith 2013, simplified for the browser)
  *     — for each undirected edge left by PC, fits linear regression in both
  *       directions and picks the direction with more Gaussian-like residuals,
  *       because in the correct causal direction X→Y the residuals should be

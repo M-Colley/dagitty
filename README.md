@@ -15,7 +15,7 @@ approachable for people new to causal inference, while keeping all of the origin
 - 💬 Plain-language analysis output (e.g. *“Your chosen controls block all confounding”* instead of *“Correctly adjusted”*)
 - 🧰 Beginner / Advanced mode, undo / redo, empty-canvas hints, and inline help on every concept
 - 📂 Machine-readable model code plus PNG / JPEG / SVG / LaTeX export and one-click download
-- 🔬 Optional **Generate DAG from data** (in-browser PC + LiNGAM causal discovery)
+- 🔬 Optional **Generate DAG from data** (in-browser PC + [LiNGAM](https://www.jmlr.org/papers/v7/shimizu06a.html) causal discovery)
 
 The diagram editing and analysis engine is the original DAGitty by Johannes Textor & Benito van der Zander
 (GNU GPL v2). The full upstream project description follows.

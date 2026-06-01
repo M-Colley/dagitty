@@ -485,7 +485,8 @@ E -&gt; D
       <p class="modal-intro">
         Upload a data file to automatically suggest a causal graph using the
         <strong>PC algorithm</strong> (skeleton + collider orientation) combined with
-        <strong>LiNGAM-inspired</strong> pairwise orientation (non-Gaussianity of residuals).
+        <strong><a href="https://www.jmlr.org/papers/v7/shimizu06a.html" target="_blank" rel="noopener">LiNGAM</a>-inspired</strong>
+        pairwise orientation (non-Gaussianity of residuals).
       </p>
 
       <div class="modal-callout">
@@ -542,7 +543,7 @@ E -&gt; D
       <div class="modal-field">
         <label class="modal-label modal-label-inline">
           <input type="checkbox" id="data-use-lingam" checked>
-          Apply LiNGAM orientation to resolve ambiguous edge directions
+          Apply <a href="https://www.jmlr.org/papers/v7/shimizu06a.html" target="_blank" rel="noopener" onclick="event.stopPropagation()">LiNGAM</a> orientation to resolve ambiguous edge directions
           <span class="help-tip"
             title="Uses residual non-Gaussianity to orient edges left ambiguous by the PC algorithm. Most useful for non-normally distributed variables.">?</span>
         </label>
