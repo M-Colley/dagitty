@@ -4,6 +4,8 @@
 >
 > **▶ Try it live (free, no install): https://m-colley.github.io/dagitty/**
 
+![A walkthrough of the redesigned DAGitty: the interactive tutorial spotlighting each panel, the plain-language analysis output, and the one-click "Assumptions for your paper" export.](assets/demo.gif)
+
 This fork reworks the DAGitty browser GUI to make building and documenting causal diagrams (DAGs)
 approachable for people new to causal inference, while keeping all of the original analysis power.
 
