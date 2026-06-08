@@ -106,6 +106,7 @@
         return {
             style:      STYLES[styleKey] || STYLES.soft,
             styleKey:   styleKey,
+            layout:     v('pub-layout', 'canvas'),
             font:       FONTS[v('pub-font', 'sans')] || FONTS.sans,
             fontSize:   parseFloat(v('pub-fontsize', '17')) || 17,
             uniform:    v('pub-shape', 'role') === 'uniform',
@@ -113,6 +114,63 @@
             legend:     c('pub-legend'),
             transparent: v('pub-bg', 'white') === 'transparent'
         };
+    }
+
+    // ── Layered (Sugiyama-style) auto-tidy layout ───────────────────────────────
+    // Ranks nodes by longest directed path so arrows flow top→bottom, then orders
+    // each layer by neighbour barycentre to cut crossings. Returns id -> {x,y} in
+    // graph units (the renderer normalises + scales to fit). Cycle-safe; ignores
+    // bidirected/undirected edges for ranking. Does NOT touch the canvas model.
+    function layeredLayout(g) {
+        var ids = g.getVertices().map(function (v) { return v.id; });
+        var parents = {}, children = {};
+        ids.forEach(function (id) { parents[id] = []; children[id] = []; });
+        g.getEdges().forEach(function (e) {
+            if (e.directed === Graph.Edgetype.Directed && parents[e.v2.id] && children[e.v1.id]) {
+                parents[e.v2.id].push(e.v1.id);
+                children[e.v1.id].push(e.v2.id);
+            }
+        });
+
+        // Longest-path layering via bounded relaxation (safe even if a cycle exists).
+        var layer = {};
+        ids.forEach(function (id) { layer[id] = 0; });
+        for (var it = 0; it < ids.length; it++) {
+            var changed = false;
+            ids.forEach(function (id) {
+                parents[id].forEach(function (p) {
+                    if (layer[p] + 1 > layer[id]) { layer[id] = layer[p] + 1; changed = true; }
+                });
+            });
+            if (!changed) break;
+        }
+
+        var layers = [];
+        ids.forEach(function (id) { (layers[layer[id]] = layers[layer[id]] || []).push(id); });
+        layers = layers.filter(function (l) { return l && l.length; });
+
+        var pos = {};
+        layers.forEach(function (L) { L.forEach(function (id, i) { pos[id] = i; }); });
+        var sweep = function (useParents) {
+            layers.forEach(function (L) {
+                var bary = {};
+                L.forEach(function (id) {
+                    var nb = useParents ? parents[id] : children[id], sum = 0, c = 0;
+                    nb.forEach(function (x) { if (pos[x] != null) { sum += pos[x]; c++; } });
+                    bary[id] = c ? sum / c : pos[id];
+                });
+                L.sort(function (a, b) { return bary[a] - bary[b]; });
+                L.forEach(function (id, i) { pos[id] = i; });
+            });
+        };
+        for (var s = 0; s < 4; s++) { sweep(true); sweep(false); }
+
+        var coords = {}, hgap = 1.5, vgap = 1.0;
+        layers.forEach(function (L, li) {
+            var n = L.length;
+            L.forEach(function (id, i) { coords[id] = { x: (i - (n - 1) / 2) * hgap, y: li * vgap }; });
+        });
+        return coords;
     }
 
     // ── Core renderer ───────────────────────────────────────────────────────────
@@ -134,8 +192,12 @@
         var edgeWidth = mode === 'minimal' ? 1.4 : 1.7;
 
         // 1. Map graph coordinates to a pixel canvas.
-        var xs = verts.map(function (v) { return v.layout_pos_x; });
-        var ys = verts.map(function (v) { return v.layout_pos_y; });
+        var tidy = o.layout === 'tidy';
+        var coords = tidy ? layeredLayout(g) : null;
+        var gx = function (v) { return tidy ? coords[v.id].x : v.layout_pos_x; };
+        var gy = function (v) { return tidy ? coords[v.id].y : v.layout_pos_y; };
+        var xs = verts.map(gx);
+        var ys = verts.map(gy);
         var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
         var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
         var spanX = Math.max(maxX - minX, 0.001), spanY = Math.max(maxY - minY, 0.001);
@@ -163,7 +225,7 @@
         var maxRy = 17;
         verts.forEach(function (v) {
             var t = el('text', {
-                x: px(v.layout_pos_x), y: py(v.layout_pos_y),
+                x: px(gx(v)), y: py(gy(v)),
                 'text-anchor': 'middle', 'dominant-baseline': 'central',
                 'font-size': o.fontSize, 'font-weight': mode === 'minimal' ? '700' : '600'
             });
@@ -172,7 +234,7 @@
             var bb; try { bb = t.getBBox(); } catch (e) { bb = null; }
             var tw = (bb && bb.width)  ? bb.width  : v.id.length * o.fontSize * 0.58;
             var th = (bb && bb.height) ? bb.height : o.fontSize * 1.05;
-            node[v.id] = { _t: t, _tw: tw, _th: th, cx: px(v.layout_pos_x), cy: py(v.layout_pos_y) };
+            node[v.id] = { _t: t, _tw: tw, _th: th, cx: px(gx(v)), cy: py(gy(v)) };
             maxRy = Math.max(maxRy, th / 2 + 9);
         });
         verts.forEach(function (v) {
@@ -193,7 +255,7 @@
             // Gently tame any stored bend toward the straight midpoint so curves
             // stay subtle rather than ballooning the way the canvas drew them.
             var ctrl = null;
-            if (o.curved && e.layout_pos_x != null && e.layout_pos_y != null) {
+            if (o.curved && !tidy && e.layout_pos_x != null && e.layout_pos_y != null) {
                 var bx = px(e.layout_pos_x), by = py(e.layout_pos_y);
                 var mx = (n1.cx + n2.cx) / 2, my = (n1.cy + n2.cy) / 2;
                 ctrl = { x: mx + 0.45 * (bx - mx), y: my + 0.45 * (by - my) };
