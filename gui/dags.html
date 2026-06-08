@@ -9,6 +9,23 @@
     DAGitty — Copyright (C) 2010-2023 Johannes Textor, Benito van der Zander
     GNU General Public License v2
   -->
+
+  <!-- Theme: set data-theme BEFORE the stylesheet loads to avoid a flash of the
+       wrong theme. Honours a saved choice, else follows the OS preference. -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('dagitty_theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+
   <link rel="stylesheet" href="dags.css" />
 
   <script src="js/dagitty.js"></script>
@@ -83,6 +100,8 @@
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
   <script src="js/ui-enhancements.js"></script>
   <script src="js/methods-export.js"></script>
+  <script src="js/publication-export.js"></script>
+  <script src="js/dag-wizard.js"></script>
   <script src="js/guided-tour.js"></script>
 </head>
 
@@ -95,7 +114,7 @@
     <p class="canvas-hint-sub">Click anywhere to add a variable.</p>
     <p class="canvas-hint-sub">Then click two variables in sequence to draw an arrow.</p>
     <p class="canvas-hint-sub" style="margin-top:.55em;opacity:.65;font-size:11px">
-      Or try an <strong>Example</strong> from the menu above.
+      New here? Try <strong>Help → Build a DAG step-by-step</strong>, or an <strong>Example</strong> from the menu above.
     </p>
   </div>
 </div>
@@ -113,9 +132,11 @@
         <li class="menu-sep"></li>
         <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Generate DAG from data…</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="exportPNG();displayHide('menu_model')">Export as PNG</a></li>
-        <li><a href="#" onclick="exportJPEG();displayHide('menu_model')">Export as JPEG</a></li>
-        <li><a href="#" onclick="exportSVG();displayHide('menu_model')">Export as SVG</a></li>
+        <li><a href="#" onclick="PubExport.open();displayHide('menu_model')"><strong>Publication figure…</strong> <span style="opacity:.6">(SVG · PNG · PDF)</span></a></li>
+        <li class="menu-sep"></li>
+        <li><a href="#" onclick="exportPNG();displayHide('menu_model')">Quick export — PNG</a></li>
+        <li><a href="#" onclick="exportJPEG();displayHide('menu_model')">Quick export — JPEG</a></li>
+        <li><a href="#" onclick="exportSVG();displayHide('menu_model')">Quick export — SVG (raw)</a></li>
         <li><a href="#" onclick="exportTikzCode();displayHide('menu_model')">Export LaTeX/TikZ</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="saveOnlineForm();displayHide('menu_model')">Publish on dagitty.net</a></li>
@@ -159,7 +180,8 @@
     <li role="none" style="border-right:none">
       <a href="javascript:void(0)" id="menu_help_title" role="menuitem" aria-haspopup="true">Help</a>
       <ul id="menu_help" style="z-index:50" role="menu">
-        <li><a href="#" onclick="GuidedTour.start();displayHide('menu_help');return false">▶ Interactive tutorial</a></li>
+        <li><a href="#" onclick="DagWizard.start();displayHide('menu_help');return false">✨ Build a DAG step-by-step</a></li>
+        <li><a href="#" onclick="GuidedTour.start();displayHide('menu_help');return false">▶ Tour the interface</a></li>
         <li class="menu-sep"></li>
         <li><a href="https://www.dagitty.net/manual-3.x.pdf" target="_blank" rel="noopener" onclick="displayHide('menu_help')">User Manual (PDF)</a></li>
         <li><a href="https://dagitty.net/learn/" target="_blank" rel="noopener" onclick="displayHide('menu_help')">Tutorials &amp; Resources</a></li>
@@ -177,6 +199,16 @@
       <button id="btn-beginner-mode" type="button" aria-pressed="false"
               title="Switch between Beginner (simplified) and Advanced (all options) mode"
               onclick="BeginnerMode.toggle()">Beginner mode</button>
+    </li>
+
+    <!-- Light / dark theme -->
+    <li id="menu-theme-li" role="none">
+      <button id="btn-theme" type="button"
+              title="Switch between light and dark theme"
+              aria-label="Switch theme" onclick="ThemeToggle.toggle()">
+        <span id="btn-theme-icon" aria-hidden="true">🌙</span>
+        <span id="btn-theme-label">Dark</span>
+      </button>
     </li>
 
     <li class="app-title" aria-hidden="true">DAGitty v3.1</li>
@@ -213,6 +245,8 @@ E -&gt; D
     </h3>
     <div id="quickstart" style="display:none">
       <div class="qs-card">
+        <button type="button" class="qs-wizard-btn" onclick="DagWizard.start()">✨ Build a DAG step-by-step</button>
+        <p class="qs-or">or do it yourself:</p>
         <ol>
           <li><strong>Click the canvas</strong> to add a variable (node).</li>
           <li><strong>Click one variable, then another</strong> to draw an arrow.</li>
@@ -565,6 +599,110 @@ E -&gt; D
       <button type="button" id="btn-import-dag"   onclick="DataModal.importDAG()"  disabled>Import to Canvas</button>
       <button type="button" id="btn-download-model" class="btn-secondary"
               onclick="DataModal.downloadModel()" style="display:none">Download Model</button>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ═══ Publication Figure Export Modal ═══════════════════════════════════════ -->
+<div id="pub-export-modal" class="modal-overlay" role="dialog"
+     aria-modal="true" aria-labelledby="pub-modal-title" style="display:none">
+  <div class="modal-dialog modal-dialog-wide">
+
+    <div class="modal-header">
+      <h2 id="pub-modal-title">Publication figure</h2>
+      <button type="button" class="modal-close" aria-label="Close" onclick="PubExport.close()">✕</button>
+    </div>
+
+    <div class="modal-body pub-body">
+      <p class="modal-intro">
+        A clean, manuscript-ready redraw of your diagram following the usual DAG conventions —
+        conditioned variables in <strong>boxes</strong>, unobserved variables <strong>dashed</strong>.
+        Export as scalable <strong>SVG</strong> (best for journals &amp; editing in Illustrator/Inkscape),
+        high-resolution <strong>PNG</strong>, or <strong>PDF</strong>.
+      </p>
+
+      <div class="pub-layout">
+
+        <!-- Controls -->
+        <form class="pub-controls" autocomplete="off" oninput="PubExport.refresh()" onchange="PubExport.refresh()">
+          <label class="pub-field">
+            <span>Style</span>
+            <select id="pub-style">
+              <option value="minimal" selected>Minimal (labels + arrows)</option>
+              <option value="outline">Outlined (colour border)</option>
+              <option value="soft">Soft (colour fill)</option>
+              <option value="gray">Greyscale (print-safe)</option>
+              <option value="bw">Black &amp; white (line art)</option>
+            </select>
+          </label>
+
+          <label class="pub-field">
+            <span>Node coding</span>
+            <select id="pub-shape">
+              <option value="role" selected>By role (recommended)</option>
+              <option value="uniform">Uniform (all the same)</option>
+            </select>
+          </label>
+
+          <label class="pub-field">
+            <span>Font</span>
+            <select id="pub-font">
+              <option value="sans" selected>Sans-serif (Helvetica/Arial)</option>
+              <option value="serif">Serif (Times/Georgia)</option>
+              <option value="inter">Inter (matches app)</option>
+            </select>
+          </label>
+
+          <label class="pub-field">
+            <span>Label size</span>
+            <select id="pub-fontsize">
+              <option value="15">Small</option>
+              <option value="17" selected>Medium</option>
+              <option value="20">Large</option>
+              <option value="23">Extra large</option>
+            </select>
+          </label>
+
+          <label class="pub-field">
+            <span>PNG resolution</span>
+            <select id="pub-png-scale">
+              <option value="2">2× (screen)</option>
+              <option value="3" selected>3× (≈300 dpi)</option>
+              <option value="4">4× (print)</option>
+            </select>
+          </label>
+
+          <label class="pub-field">
+            <span>Background</span>
+            <select id="pub-bg">
+              <option value="white" selected>White</option>
+              <option value="transparent">Transparent</option>
+            </select>
+          </label>
+
+          <label class="pub-check">
+            <input type="checkbox" id="pub-curved"> Curve bent edges
+          </label>
+          <label class="pub-check">
+            <input type="checkbox" id="pub-legend" checked> Include legend
+          </label>
+        </form>
+
+        <!-- Preview -->
+        <div class="pub-preview-wrap">
+          <div id="pub-preview" class="pub-preview" aria-label="Figure preview"></div>
+          <div id="pub-status" class="pub-status" aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" onclick="PubExport.close()">Close</button>
+      <button type="button" onclick="PubExport.printPDF()">Print / Save as PDF</button>
+      <button type="button" onclick="PubExport.downloadPNG()">Download PNG</button>
+      <button type="button" onclick="PubExport.downloadSVG()">Download SVG</button>
     </div>
 
   </div>

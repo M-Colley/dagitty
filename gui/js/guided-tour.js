@@ -207,15 +207,19 @@
         p.id = 'tour-prompt';
         p.innerHTML =
             '<span class="tp-wave">👋</span>' +
-            '<span class="tp-txt">New to causal diagrams? Take a quick guided tour.</span>' +
-            '<button id="tp-start">Start tour</button>' +
+            '<span class="tp-txt">New to causal diagrams? Build your first one step by step.</span>' +
+            '<button id="tp-build">Build a DAG</button>' +
+            '<button id="tp-start" class="tour-ghost">Just tour the interface</button>' +
             '<button id="tp-later" class="tour-ghost">Maybe later</button>';
         document.body.appendChild(p);
-        document.getElementById('tp-start').addEventListener('click', function () { p.remove(); start(); });
-        document.getElementById('tp-later').addEventListener('click', function () {
-            p.remove();
-            try { localStorage.setItem(STORE_KEY, '1'); } catch (e) {}
+        var dismiss = function () { try { localStorage.setItem(STORE_KEY, '1'); } catch (e) {} };
+        var buildBtn = document.getElementById('tp-build');
+        if (buildBtn) buildBtn.addEventListener('click', function () {
+            p.remove(); dismiss();
+            if (window.DagWizard) DagWizard.start(); else start();
         });
+        document.getElementById('tp-start').addEventListener('click', function () { p.remove(); start(); });
+        document.getElementById('tp-later').addEventListener('click', function () { p.remove(); dismiss(); });
     }
 
     window.GuidedTour = { start: start, end: end };

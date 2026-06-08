@@ -200,6 +200,56 @@
         }
     };
 
+    // ── 4b. Light / dark theme toggle ─────────────────────────────────────────
+    // The effective theme is set on <html data-theme> by an inline script in the
+    // page <head> (before CSS loads, to avoid a flash). Here we just flip it and
+    // keep the toolbar button in sync.
+
+    var ThemeToggle = {
+        KEY: 'dagitty_theme',
+
+        current: function () {
+            return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        },
+
+        set: function (theme, persist) {
+            document.documentElement.setAttribute('data-theme', theme);
+            if (persist !== false) {
+                try { localStorage.setItem(this.KEY, theme); } catch (e) {}
+            }
+            this._sync();
+        },
+
+        toggle: function () {
+            this.set(this.current() === 'dark' ? 'light' : 'dark');
+        },
+
+        _sync: function () {
+            var icon = document.getElementById('btn-theme-icon');
+            var label = document.getElementById('btn-theme-label');
+            var btn = document.getElementById('btn-theme');
+            var isDark = this.current() === 'dark';
+            // Show what you'll switch TO (the common toggle convention).
+            if (icon) icon.textContent = isDark ? '☀' : '🌙';
+            if (label) label.textContent = isDark ? 'Light' : 'Dark';
+            if (btn) btn.title = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+        },
+
+        init: function () {
+            this._sync();
+            // If the user has not made an explicit choice, keep following the OS.
+            var stored;
+            try { stored = localStorage.getItem(this.KEY); } catch (e) { stored = null; }
+            if (stored !== 'light' && stored !== 'dark' && window.matchMedia) {
+                var mq = window.matchMedia('(prefers-color-scheme: dark)');
+                var self = this;
+                var onChange = function (e) { self.set(e.matches ? 'dark' : 'light', false); };
+                if (mq.addEventListener) mq.addEventListener('change', onChange);
+                else if (mq.addListener) mq.addListener(onChange);
+            }
+        }
+    };
+
     function _getSectionHeader(id) {
         var h3s = document.querySelectorAll('h3');
         for (var i = 0; i < h3s.length; i++) {
@@ -668,6 +718,7 @@
         initUndoRedoKeys();
         initMenuKeyboard();
         BeginnerMode.init();
+        ThemeToggle.init();
 
         // Rename "selected" label
         var lbl = document.querySelector('label[for="variable_selected"]');
@@ -691,5 +742,6 @@
     // Expose for HTML onclick handlers
     window.BeginnerMode = BeginnerMode;
     window.UndoRedo = UndoRedo;
+    window.ThemeToggle = ThemeToggle;
 
 })();
