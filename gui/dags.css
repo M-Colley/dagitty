@@ -1154,6 +1154,13 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
 
 [data-theme="dark"] body { background: #0f172a; }
 [data-theme="dark"] #canvas { background-color: #0f172a; background-image: radial-gradient(circle, #1e293b 1px, transparent 1px); }
+/* On-canvas edges & arrowheads: the renderer draws them with stroke="black"
+   (a presentation attribute, so CSS wins). Recolour them light for the dark
+   canvas. Coloured causal/biasing paths use other stroke values and node
+   shapes use #000000/#666666, so neither is affected. */
+[data-theme="dark"] #canvas svg path[stroke="black"] { stroke: #e2e8f0; }
+[data-theme="dark"] #canvas svg path.arrowfront,
+[data-theme="dark"] #canvas svg path.arrowback { fill: #e2e8f0; }
 [data-theme="dark"] textarea { background: #1e293b; color: var(--text); }
 [data-theme="dark"] textarea:focus { background: #162032; }
 [data-theme="dark"] select { background: #1e293b; color: var(--text); }
