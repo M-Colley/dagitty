@@ -3,12 +3,15 @@
  * A staged, step-by-step flow for building a first causal diagram, aimed at
  * people new to causal inference. Instead of dropping users straight onto a
  * blank canvas, it walks them through the modelling decisions — exposure,
- * outcome, other variables, then the arrows between them — defining each term
- * in plain language as it goes, and finally drops them into the full interface
- * with a ready-made diagram to refine.
+ * outcome, other variables (and whether each is measured), and an optional
+ * selection node — then auto-draws the arrows implied by the roles and drops
+ * them into the full interface to refine.
  *
- * Augments the GUI without touching main.js. Builds standard DAGitty model
- * code and hands it to loadDAGFromTextData() + the spring layouter.
+ * Arrows are NOT hand-entered in the wizard (that was more friction than it was
+ * worth): they are derived from the declared roles and then edited on the canvas.
+ *
+ * Augments the GUI without touching main.js. Builds standard DAGitty model code
+ * and hands it to loadDAGFromTextData() + the spring layouter.
  */
 
 (function () {
@@ -89,8 +92,9 @@
                 return '' +
                   '<p class="wiz-lead">Add other variables that matter for the ' +
                   '<strong>' + esc(state.exposure || 'exposure') + ' → ' + esc(state.outcome || 'outcome') + '</strong> ' +
-                  'relationship. Pick a role and we\'ll suggest the usual arrows for you (you can change them next). ' +
-                  'This step is optional.</p>' +
+                  'relationship. Pick a role — we\'ll draw the usual arrows automatically, and you can fine-tune them ' +
+                  'on the canvas afterwards. Mark whether each is <strong>measured</strong>: unmeasured variables ' +
+                  'become unobserved (latent) and can\'t be adjusted for. This step is optional.</p>' +
                   '<dl class="wiz-defs">' +
                     '<div><dt>Confounder</dt><dd>a common cause of both the exposure and the outcome ' +
                       '(creates a spurious association — usually must be adjusted for).</dd></div>' +
@@ -108,6 +112,7 @@
                       '<option value="collider">Collider</option>' +
                       '<option value="other">Other</option>' +
                     '</select>' +
+                    '<label class="wiz-check wiz-measured"><input type="checkbox" id="wiz-var-measured" checked> measured</label>' +
                     '<button type="button" class="wiz-add-btn" id="wiz-add-var">Add</button>' +
                   '</div>' +
                   '<ul class="wiz-chiplist" id="wiz-var-list"></ul>';
@@ -118,12 +123,14 @@
                     var nameEl = root.querySelector('#wiz-var-name');
                     var name = clean(nameEl.value);
                     var role = root.querySelector('#wiz-var-role').value;
+                    var measured = root.querySelector('#wiz-var-measured').checked;
                     if (!name) return;
                     var taken = name === state.exposure || name === state.outcome ||
                         state.others.some(function (o) { return o.name === name; });
                     if (taken) { flash(nameEl); return; }
-                    state.others.push({ name: name, role: role });
+                    state.others.push({ name: name, role: role, measured: measured });
                     nameEl.value = ''; nameEl.focus();
+                    root.querySelector('#wiz-var-measured').checked = true;
                     renderVarList();
                 };
                 root.querySelector('#wiz-add-var').addEventListener('click', add);
@@ -134,69 +141,90 @@
             }
         },
         {
-            title: 'Connect the variables with arrows',
+            title: 'Did selection into the sample play a role?',
             render: function () {
                 return '' +
-                  '<p class="wiz-lead">An arrow <strong>X → Y</strong> means "X directly causes Y". ' +
-                  'We\'ve added the arrows implied by the roles you chose — add or remove any below.</p>' +
-                  '<div class="wiz-add-row">' +
-                    '<select id="wiz-edge-from" class="wiz-input"></select>' +
-                    '<span class="wiz-arrow">→</span>' +
-                    '<select id="wiz-edge-to" class="wiz-input"></select>' +
-                    '<button type="button" class="wiz-add-btn" id="wiz-add-edge">Add arrow</button>' +
-                  '</div>' +
-                  '<ul class="wiz-chiplist" id="wiz-edge-list"></ul>';
+                  '<p class="wiz-lead">Optional but valuable. A <span class="wiz-term">selection node</span> represents ' +
+                  'whether someone ended up in your sample (e.g. "agreed to join the study", "wasn\'t lost to ' +
+                  'follow-up"). Because everyone in your data <em>is</em> selected, the analysis conditions on it — so ' +
+                  'if the exposure or outcome affects selection, you get a <strong>collider (selection) bias</strong> ' +
+                  'that\'s easy to overlook.</p>' +
+                  '<label class="wiz-check"><input type="checkbox" id="wiz-sel-enabled"> Add a selection node</label>' +
+                  '<div id="wiz-sel-detail" style="display:none;margin-top:.9em">' +
+                    '<label class="wiz-input-label">Name of the selection variable' +
+                      '<input type="text" id="wiz-sel-name" class="wiz-input" value="' + esc(state.selection.name) + '" autocomplete="off"></label>' +
+                    '<p class="wiz-sub">Which variables affect who ends up in the sample? Each adds an arrow ' +
+                      '<em>into</em> the selection node.</p>' +
+                    '<div id="wiz-sel-causes" class="wiz-check-grid"></div>' +
+                    '<p class="wiz-eg" id="wiz-sel-warn" style="display:none">⚠ Both the exposure and outcome affect ' +
+                      'selection — that\'s the classic selection-bias collider.</p>' +
+                  '</div>';
             },
             mount: function () {
-                fillEdgeSelects();
-                root.querySelector('#wiz-add-edge').addEventListener('click', function () {
-                    var from = root.querySelector('#wiz-edge-from').value;
-                    var to = root.querySelector('#wiz-edge-to').value;
-                    if (!from || !to || from === to) return;
-                    if (state.edges.some(function (e) { return e.from === from && e.to === to; })) return;
-                    state.edges.push({ from: from, to: to });
-                    renderEdgeList();
+                var enabledEl = root.querySelector('#wiz-sel-enabled');
+                var detail = root.querySelector('#wiz-sel-detail');
+                enabledEl.checked = state.selection.enabled;
+                detail.style.display = state.selection.enabled ? 'block' : 'none';
+                enabledEl.addEventListener('change', function () {
+                    detail.style.display = enabledEl.checked ? 'block' : 'none';
                 });
-                renderEdgeList();
-            },
-            onEnter: function () {
-                // Seed suggested arrows once, based on roles chosen in the previous step.
-                if (state._seeded) return;
-                state._seeded = true;
-                var add = function (from, to) {
-                    if (from && to && from !== to &&
-                        !state.edges.some(function (e) { return e.from === from && e.to === to; })) {
-                        state.edges.push({ from: from, to: to });
-                    }
+                var grid = root.querySelector('#wiz-sel-causes');
+                grid.innerHTML = '';
+                var warn = function () {
+                    var w = root.querySelector('#wiz-sel-warn');
+                    var exp = grid.querySelector('input[data-cause="' + cssEsc(state.exposure) + '"]');
+                    var out = grid.querySelector('input[data-cause="' + cssEsc(state.outcome) + '"]');
+                    if (w) w.style.display = (exp && exp.checked && out && out.checked) ? 'block' : 'none';
                 };
-                if (state.exposure && state.outcome) add(state.exposure, state.outcome);
-                state.others.forEach(function (o) {
-                    if (o.role === 'confounder') { add(o.name, state.exposure); add(o.name, state.outcome); }
-                    else if (o.role === 'mediator') { add(state.exposure, o.name); add(o.name, state.outcome); }
-                    else if (o.role === 'collider') { add(state.exposure, o.name); add(state.outcome, o.name); }
+                allVarNames().forEach(function (n) {
+                    var lbl = document.createElement('label');
+                    lbl.className = 'wiz-check';
+                    var cb = document.createElement('input');
+                    cb.type = 'checkbox'; cb.checked = !!state.selection.causes[n];
+                    cb.setAttribute('data-cause', n);
+                    cb.addEventListener('change', warn);
+                    lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + n));
+                    grid.appendChild(lbl);
+                });
+                warn();
+            },
+            onLeave: function () {
+                var enabledEl = root.querySelector('#wiz-sel-enabled');
+                state.selection.enabled = !!(enabledEl && enabledEl.checked);
+                var nameEl = root.querySelector('#wiz-sel-name');
+                if (nameEl) state.selection.name = clean(nameEl.value) || 'Selected';
+                state.selection.causes = {};
+                root.querySelectorAll('#wiz-sel-causes input[type="checkbox"]').forEach(function (cb) {
+                    state.selection.causes[cb.getAttribute('data-cause')] = cb.checked;
                 });
             }
         },
         {
             title: 'Ready to build',
             render: function () {
-                var n = 2 + state.others.length;
+                var n = 2 + state.others.length + (state.selection.enabled ? 1 : 0);
+                var nEdges = autoEdges().length;
+                var unmeasured = state.others.filter(function (o) { return !o.measured; }).map(function (o) { return o.name; });
                 return '' +
                   '<p class="wiz-lead">Your diagram has <strong>' + n + '</strong> variable' + (n !== 1 ? 's' : '') +
-                  ' and <strong>' + state.edges.length + '</strong> arrow' + (state.edges.length !== 1 ? 's' : '') +
-                  '. We\'ll draw it, arrange it automatically, and open it in the editor — where DAGitty will tell ' +
-                  'you which variables you need to adjust for.</p>' +
+                  ' and <strong>' + nEdges + '</strong> arrow' + (nEdges !== 1 ? 's' : '') +
+                  ' (added automatically from the roles you chose). We\'ll draw it, arrange it, and open it in the ' +
+                  'editor — where you can add or change arrows, and DAGitty will tell you what to adjust for.</p>' +
                   '<div class="wiz-summary">' +
                     '<p><span class="wiz-pill wiz-pill-exp">exposure</span> ' + esc(state.exposure || '—') + '</p>' +
                     '<p><span class="wiz-pill wiz-pill-out">outcome</span> ' + esc(state.outcome || '—') + '</p>' +
                     (state.others.length ? '<p><span class="wiz-pill">others</span> ' +
                         esc(state.others.map(function (o) { return o.name; }).join(', ')) + '</p>' : '') +
+                    (unmeasured.length ? '<p><span class="wiz-pill">unobserved</span> ' + esc(unmeasured.join(', ')) + '</p>' : '') +
+                    (state.selection.enabled ? '<p><span class="wiz-pill">selection</span> ' + esc(state.selection.name) + '</p>' : '') +
                   '</div>' +
                   '<label class="wiz-check"><input type="checkbox" id="wiz-tour" checked> ' +
                     'Give me a quick tour of the interface afterwards</label>';
             }
         }
     ];
+
+    function cssEsc(s) { return String(s).replace(/(["\\\]\[])/g, '\\$1'); }
 
     // ── Sub-renderers ─────────────────────────────────────────────────────────
 
@@ -211,12 +239,11 @@
         state.others.forEach(function (o, i) {
             var li = document.createElement('li');
             li.className = 'wiz-chip';
-            li.innerHTML = '<span>' + esc(o.name) + '</span><span class="wiz-chip-role">' + o.role + '</span>' +
-                '<button type="button" aria-label="Remove">✕</button>';
+            li.innerHTML = '<span>' + esc(o.name) + '</span><span class="wiz-chip-role">' + o.role +
+                (o.measured ? '' : ' · unobserved') + '</span><button type="button" aria-label="Remove">✕</button>';
             li.querySelector('button').addEventListener('click', function () {
                 var removed = state.others.splice(i, 1)[0];
-                // also drop any edges touching it
-                state.edges = state.edges.filter(function (e) { return e.from !== removed.name && e.to !== removed.name; });
+                if (removed) delete state.selection.causes[removed.name];
                 renderVarList();
             });
             ul.appendChild(li);
@@ -231,38 +258,43 @@
         return names;
     }
 
-    function fillEdgeSelects() {
-        var from = root.querySelector('#wiz-edge-from'), to = root.querySelector('#wiz-edge-to');
-        if (!from || !to) return;
-        var opts = allVarNames().map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
-        from.innerHTML = opts;
-        to.innerHTML = opts;
-        if (to.options.length > 1) to.selectedIndex = 1;
-    }
-
-    function renderEdgeList() {
-        var ul = root.querySelector('#wiz-edge-list');
-        if (!ul) return;
-        ul.innerHTML = '';
-        if (!state.edges.length) {
-            ul.innerHTML = '<li class="wiz-empty">No arrows yet — add at least one to describe a relationship.</li>';
-            return;
-        }
-        state.edges.forEach(function (e, i) {
-            var li = document.createElement('li');
-            li.className = 'wiz-chip';
-            li.innerHTML = '<span>' + esc(e.from) + ' → ' + esc(e.to) + '</span>' +
-                '<button type="button" aria-label="Remove">✕</button>';
-            li.querySelector('button').addEventListener('click', function () {
-                state.edges.splice(i, 1); renderEdgeList();
-            });
-            ul.appendChild(li);
-        });
-    }
-
     function flash(el) {
         el.classList.add('wiz-flash');
         setTimeout(function () { el.classList.remove('wiz-flash'); }, 600);
+    }
+
+    // ── Arrows implied by the declared roles ────────────────────────────────────
+
+    function autoEdges() {
+        var edges = [];
+        var add = function (from, to) {
+            if (from && to && from !== to &&
+                !edges.some(function (e) { return e.from === from && e.to === to; })) edges.push({ from: from, to: to });
+        };
+        if (state.exposure && state.outcome) add(state.exposure, state.outcome);
+        state.others.forEach(function (o) {
+            if (o.role === 'confounder') { add(o.name, state.exposure); add(o.name, state.outcome); }
+            else if (o.role === 'mediator') { add(state.exposure, o.name); add(o.name, state.outcome); }
+            else if (o.role === 'collider') { add(state.exposure, o.name); add(state.outcome, o.name); }
+        });
+        if (state.selection.enabled && state.selection.name) {
+            Object.keys(state.selection.causes).forEach(function (v) {
+                if (state.selection.causes[v]) add(v, state.selection.name);
+            });
+        }
+        return edges;
+    }
+
+    function buildCode() {
+        var lines = ['dag {'];
+        var nodeLine = function (name, attr) { return '"' + name + '"' + (attr ? ' [' + attr + ']' : ''); };
+        lines.push(nodeLine(state.exposure, 'exposure'));
+        lines.push(nodeLine(state.outcome, 'outcome'));
+        state.others.forEach(function (o) { lines.push(nodeLine(o.name, o.measured ? null : 'latent')); });
+        if (state.selection.enabled && state.selection.name) lines.push(nodeLine(state.selection.name, 'selected'));
+        autoEdges().forEach(function (e) { lines.push('"' + e.from + '" -> "' + e.to + '"'); });
+        lines.push('}');
+        return lines.join('\n');
     }
 
     // ── Modal shell ─────────────────────────────────────────────────────────────
@@ -309,15 +341,13 @@
         root.querySelector('#wiz-body').innerHTML = step.render();
         if (step.mount) step.mount();
 
-        // progress dots
         var prog = root.querySelector('#wiz-progress');
         prog.innerHTML = STEPS.map(function (s, i) {
             return '<span class="wiz-dot' + (i === state.step ? ' on' : '') + (i < state.step ? ' done' : '') + '"></span>';
         }).join('');
 
         root.querySelector('#wiz-back').style.visibility = state.step === 0 ? 'hidden' : 'visible';
-        var nextBtn = root.querySelector('#wiz-next');
-        nextBtn.textContent = state.step === STEPS.length - 1 ? 'Create diagram' : 'Next';
+        root.querySelector('#wiz-next').textContent = state.step === STEPS.length - 1 ? 'Create diagram' : 'Next';
 
         if (step.focus) {
             var f = root.querySelector('#' + step.focus);
@@ -358,23 +388,9 @@
 
     // ── Build & hand off ──────────────────────────────────────────────────────
 
-    function buildCode() {
-        var lines = ['dag {'];
-        var nodeLine = function (name, attr) {
-            return '"' + name + '"' + (attr ? ' [' + attr + ']' : '');
-        };
-        lines.push(nodeLine(state.exposure, 'exposure'));
-        lines.push(nodeLine(state.outcome, 'outcome'));
-        state.others.forEach(function (o) { lines.push(nodeLine(o.name, null)); });
-        state.edges.forEach(function (e) { lines.push('"' + e.from + '" -> "' + e.to + '"'); });
-        lines.push('}');
-        return lines.join('\n');
-    }
-
     function finish() {
         var wantTour = root.querySelector('#wiz-tour') && root.querySelector('#wiz-tour').checked;
 
-        // apply mode preference
         if (window.BeginnerMode) {
             if (state.mode === 'beginner' && !BeginnerMode.active) BeginnerMode.toggle();
             if (state.mode === 'advanced' && BeginnerMode.active) BeginnerMode.toggle();
@@ -396,7 +412,10 @@
 
     function start() {
         ensureRoot();
-        state = { step: 0, mode: 'beginner', exposure: '', outcome: '', others: [], edges: [], _seeded: false };
+        state = {
+            step: 0, mode: 'beginner', exposure: '', outcome: '', others: [],
+            selection: { enabled: false, name: 'Selected', causes: {} }
+        };
         root.style.display = 'flex';
         show();
     }

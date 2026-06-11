@@ -170,7 +170,7 @@
             var n = L.length;
             L.forEach(function (id, i) { coords[id] = { x: (i - (n - 1) / 2) * hgap, y: li * vgap }; });
         });
-        return coords;
+        return { coords: coords, layer: layer };
     }
 
     // ── Core renderer ───────────────────────────────────────────────────────────
@@ -193,7 +193,9 @@
 
         // 1. Map graph coordinates to a pixel canvas.
         var tidy = o.layout === 'tidy';
-        var coords = tidy ? layeredLayout(g) : null;
+        var tl = tidy ? layeredLayout(g) : null;
+        var coords = tl ? tl.coords : null;
+        var nodeLayer = tl ? tl.layer : null;
         var gx = function (v) { return tidy ? coords[v.id].x : v.layout_pos_x; };
         var gy = function (v) { return tidy ? coords[v.id].y : v.layout_pos_y; };
         var xs = verts.map(gx);
@@ -248,6 +250,7 @@
         });
 
         // 3. Edges (under the nodes).
+        var longEdgeIdx = 0;
         edges.forEach(function (e) {
             var n1 = node[e.v1.id], n2 = node[e.v2.id];
             if (!n1 || !n2) return;
@@ -259,6 +262,21 @@
                 var bx = px(e.layout_pos_x), by = py(e.layout_pos_y);
                 var mx = (n1.cx + n2.cx) / 2, my = (n1.cy + n2.cy) / 2;
                 ctrl = { x: mx + 0.45 * (bx - mx), y: my + 0.45 * (by - my) };
+            }
+
+            // In tidy mode, edges that skip a layer (e.g. a confounder pointing
+            // past the exposure to the outcome) would otherwise lie on top of the
+            // nodes/edges between them. Bow them aside, alternating sides.
+            if (tidy && nodeLayer) {
+                var span = Math.abs((nodeLayer[e.v1.id] || 0) - (nodeLayer[e.v2.id] || 0));
+                if (span >= 2) {
+                    var ex = n2.cx - n1.cx, ey = n2.cy - n1.cy;
+                    var elen = Math.sqrt(ex * ex + ey * ey) || 1;
+                    var off = Math.max(45, Math.min((0.12 + 0.05 * (span - 1)) * elen, 150));
+                    var sign = (longEdgeIdx++ % 2 === 0) ? 1 : -1;
+                    ctrl = { x: (n1.cx + n2.cx) / 2 + (-ey / elen) * off * sign,
+                             y: (n1.cy + n2.cy) / 2 + (ex / elen) * off * sign };
+                }
             }
             var aim1 = ctrl || { x: n2.cx, y: n2.cy };
             var aim2 = ctrl || { x: n1.cx, y: n1.cy };

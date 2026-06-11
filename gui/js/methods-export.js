@@ -53,9 +53,12 @@
             allIds.length + ' variable' + (allIds.length !== 1 ? 's' : '') + ', specifying ' +
             list(roleParts) + '.';
         if (covariates.length) {
-            overview += ' The remaining variable' + (covariates.length !== 1 ? 's' : '') + ' (' +
-                list(covariates) + ') ' + (covariates.length !== 1 ? 'were' : 'was') +
-                ' included as ' + (covariates.length !== 1 ? 'covariates' : 'a covariate') + '.';
+            // Deliberately NOT "covariates": in a DAG some variables (e.g. mediators,
+            // colliders) should be left OUT of the statistical model, so calling them
+            // covariates would be misleading.
+            overview += covariates.length !== 1
+                ? ' Other variables in the system included ' + list(covariates) + '.'
+                : ' Another variable in the system was ' + covariates[0] + '.';
         }
         if (latent.length) {
             overview += ' ' + list(latent) + ' ' + (latent.length !== 1 ? 'were' : 'was') +
@@ -63,16 +66,13 @@
         }
         lines.push(overview);
 
-        // 2. Assumed relationships
-        var directed = [], bidirected = [];
+        // 2. Assumed relationships. The directed arrows are shown in the diagram
+        //    itself, so restating them in prose would be redundant; we only spell
+        //    out unmeasured common causes, which are easy to overlook in a figure.
+        var bidirected = [];
         g.getEdges().forEach(function (e) {
-            if (e.directed === Graph.Edgetype.Directed) directed.push(e.v1.id + ' → ' + e.v2.id);
-            else if (e.directed === Graph.Edgetype.Bidirected) bidirected.push(e.v1.id + ' and ' + e.v2.id);
+            if (e.directed === Graph.Edgetype.Bidirected) bidirected.push(e.v1.id + ' and ' + e.v2.id);
         });
-        if (directed.length) {
-            lines.push('The diagram assumes the following direct causal relationships (an arrow X → Y means ' +
-                'X is assumed to directly affect Y): ' + directed.join('; ') + '.');
-        }
         if (bidirected.length) {
             lines.push('The following pairs are assumed to share one or more unmeasured common causes: ' +
                 bidirected.join('; ') + '.');
@@ -169,7 +169,10 @@
                     (first[2][0].length ? ' | ' + ids(first[2][0]).join(', ') : '');
                 lines.push('The model implies ' + count + ' testable conditional independenc' +
                     (count !== 1 ? 'ies' : 'y') + ' (for example, ' + ex + '). ' +
-                    'These can be checked against the data to partially assess whether the assumed structure is consistent with what was observed.');
+                    'We tested ' + (count !== 1 ? 'these implications' : 'this implication') +
+                    ' against our data using localTests() from the dagitty R package. ' +
+                    '[REPORT RESULTS HERE: state which implied independencies held and which were violated — ' +
+                    'e.g. the largest absolute test statistic and its p-value, or the proportion consistent with the data.]');
             }
         }
 

@@ -675,6 +675,87 @@
         document.head.appendChild(s);
     }
 
+    // ── 8b. Tooltips ──────────────────────────────────────────────────────────
+    // The "?" help badges previously relied on the native `title` tooltip, which
+    // is slow, unstyled, and unreliable across browsers. Replace it with a small
+    // styled popover shown on hover and keyboard focus.
+
+    function initTooltips() {
+        var tip = null;
+        function ensure() {
+            if (!tip) {
+                tip = document.createElement('div');
+                tip.className = 'app-tooltip';
+                tip.setAttribute('role', 'tooltip');
+                document.body.appendChild(tip);
+            }
+            return tip;
+        }
+        function textFor(el) {
+            if (el.getAttribute('data-tip') != null) return el.getAttribute('data-tip');
+            var t = el.getAttribute('title');
+            if (t != null) {
+                el.setAttribute('data-tip', t);
+                el.removeAttribute('title');           // suppress the native tooltip
+                if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', t);
+                if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+                return t;
+            }
+            return '';
+        }
+        function show(el) {
+            var txt = textFor(el);
+            if (!txt) return;
+            var t = ensure();
+            t.textContent = txt;
+            t.style.display = 'block';
+            t.style.left = '0'; t.style.top = '0';
+            var r = el.getBoundingClientRect(), tw = t.offsetWidth, th = t.offsetHeight, gap = 8;
+            var left = r.left + r.width / 2 - tw / 2;
+            var top = r.bottom + gap;
+            if (top + th > window.innerHeight - 4) top = r.top - gap - th;
+            left = Math.max(6, Math.min(left, window.innerWidth - tw - 6));
+            t.style.left = left + 'px'; t.style.top = top + 'px';
+            t.classList.add('on');
+        }
+        function hide() { if (tip) { tip.classList.remove('on'); tip.style.display = 'none'; } }
+
+        var sel = '.help-tip';
+        document.addEventListener('mouseover', function (e) { var el = e.target.closest && e.target.closest(sel); if (el) show(el); });
+        document.addEventListener('mouseout',  function (e) { var el = e.target.closest && e.target.closest(sel); if (el) hide(); });
+        document.addEventListener('focusin',   function (e) { var el = e.target.closest && e.target.closest(sel); if (el) show(el); });
+        document.addEventListener('focusout',  function (e) { var el = e.target.closest && e.target.closest(sel); if (el) hide(); });
+        document.addEventListener('keydown',   function (e) { if (e.key === 'Escape') hide(); });
+
+        // Pre-convert existing badges so the native tooltip never appears and
+        // they're keyboard-focusable.
+        document.querySelectorAll('.help-tip[title]').forEach(textFor);
+    }
+
+    // ── 8c. Export model as R code (dagitty / ggdag) ──────────────────────────
+
+    window.exportRCode = function () {
+        var code = (window.Model && Model.dag) ? Model.dag.toString() : 'dag { }';
+        var r =
+            '# DAG exported from DAGitty — reproduce and analyse in R\n' +
+            'library(dagitty)\n\n' +
+            'g <- dagitty(\'' + code + '\')\n\n' +
+            'plot(g)\n\n' +
+            '# Tidyverse-friendly plotting & analysis with ggdag:\n' +
+            '# library(ggdag)\n' +
+            '# ggdag(g) + theme_dag()\n' +
+            '# ggdag_adjustment_set(g)            # minimal sufficient adjustment set(s)\n' +
+            '# impliedConditionalIndependencies(g)\n' +
+            '# localTests(g, data = your_data)    # test those implications against data\n';
+        if (window.DAGittyControl && DAGittyControl.getView) {
+            DAGittyControl.getView().openHTMLDialog(
+                '<p style="margin:.2em 0 .5em;font-size:12px">R code (uses the <code>dagitty</code> package; ' +
+                'works directly with <code>ggdag</code>). Copy it into your script:</p>' +
+                '<textarea style="width:92%" rows="12" readonly onclick="this.select()">' +
+                _escHtml(r) + '</textarea>', 'OK');
+        }
+    };
+
     // ── 9. Undo/Redo keyboard handler ─────────────────────────────────────────
 
     function initUndoRedoKeys() {
@@ -717,6 +798,7 @@
 
         initUndoRedoKeys();
         initMenuKeyboard();
+        initTooltips();
         BeginnerMode.init();
         ThemeToggle.init();
 
