@@ -245,11 +245,20 @@
 
     function selectFallback(ta) { ta.focus(); ta.select(); }
 
+    // The methods statement is the heaviest analysis on the page (it enumerates
+    // all minimal implications and adjustment sets). Debounce it so a burst of
+    // edits only recomputes once the user pauses, keeping editing responsive.
+    var _refreshTimer = null;
+    function refreshDebounced() {
+        if (_refreshTimer) clearTimeout(_refreshTimer);
+        _refreshTimer = setTimeout(function () { _refreshTimer = null; refresh(); }, 200);
+    }
+
     window.MethodsExport = { refresh: refresh, copy: copyText, generate: generate };
 
     window.addEventListener('load', function () {
         if (window.DAGittyControl) {
-            DAGittyControl.observe('graphchange', function () { refresh(); });
+            DAGittyControl.observe('graphchange', refreshDebounced);
         }
         // initial fill (after initialize() has built Model.dag)
         setTimeout(refresh, 120);

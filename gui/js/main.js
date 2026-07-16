@@ -179,6 +179,14 @@ function nl2br (str, is_xhtml) {
     return (str + '').replace(/([^>\r\n]?)(\r\n|\n\r|\r|\n)/g, '$1' + breakTag + '$2');
 }
 
+/* Escape a value before it is interpolated into an innerHTML string. Variable
+   names are user-supplied (and travel between users via shared/loaded models),
+   so any id placed into markup must be escaped to prevent HTML/script injection. */
+function escapeHTML( s ){
+	return (s + '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+		.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function msg( t ){
 	DAGittyControl.getView().openAlertDialog( t );
 }
@@ -199,9 +207,9 @@ function setsToHTML( sets ){
 					msas_html[i] += ", ";
 				}
 				if( Model.dag.isAdjustedNode( ids[j] ) ){
-					msas_html[i] += "<strong>"+ids[j]+"</strong>";
+					msas_html[i] += "<strong>"+escapeHTML(ids[j])+"</strong>";
 				} else {
-					msas_html[i] += ids[j];
+					msas_html[i] += escapeHTML(ids[j]);
 				}
 			}
 			msas_html[i] += "}";
@@ -440,9 +448,9 @@ function ivsToHtml( ivs ){
 	if( ivs.length > 0 ){
 		var ivs_html = [];
 		for( var i = 0 ; i < ivs.length ; i ++ ){
-			ivs_html[i] = ivs[i][0].id
+			ivs_html[i] = escapeHTML(ivs[i][0].id)
 			if( ivs[i][1].length > 0 ){
-				ivs_html[i] += " | "+_.pluck(ivs[i][1],'id').join(', ');
+				ivs_html[i] += " | "+_.map(_.pluck(ivs[i][1],'id'),escapeHTML).join(', ');
 			}
 		} 
 		return "<ul><li>"+ivs_html.sort().join("</li><li>")+"</li></ul>";
@@ -481,7 +489,8 @@ function missingCyclesToString(missingCycles) {
 		return "missing cycle " + missingCycles[0].join(", ")
 	return "missing cycles " + _.map(missingCycles, function(c){return c.join(", ")}).join(" and ")
 }
-function showTreeFASTP(id) {
+function showTreeFASTP(id, encoded) {
+	if( encoded ){ id = decodeURIComponent(id) }
 	var q = getVertexParent(id)
 	var res = window.lastTreeIDResults.results[id][0]
 	var msg =  "The effect λ"+q+id+" of "+q + " on "+id+" is given by: \n"
@@ -519,17 +528,17 @@ function treeIDResultsToHtml( tid ){
 			if (v[0].fastp.length != kID) return
 			//console.log(v[0])
 			if (v[0].fastp) {
-				r += "<li>Effect of "+getVertexParent(k)+" on " + k + ":<br><a href='javascript:showTreeFASTP( \""+k+"\")'>"
+				r += "<li>Effect of "+escapeHTML(getVertexParent(k))+" on " + escapeHTML(k) + ":<br><a href=\"javascript:void(0)\" onclick='showTreeFASTP( \""+encodeURIComponent(k)+"\", true )'>"
 				if (v[0].instrument) {
-					r += "instrumental variable " + v[0].instrument
+					r += "instrumental variable " + escapeHTML(v[0].instrument)
 				}
 				if (v[0].propagate && (!v[0].missingCycles || !v[0].propagatedMissingCycles) ) {
-					r += "propagate from " + v[0].propagate
+					r += "propagate from " + escapeHTML(v[0].propagate)
 				}
 				if (v[0].missingCycles) {
-					r += missingCyclesToString(v[0].missingCycles)
+					r += escapeHTML(missingCyclesToString(v[0].missingCycles))
 					if (v[0].propagate && v[0].propagatedMissingCycles ) {
-						r += "<br>and " + missingCyclesToString(v[0].propagatedMissingCycles) + " propagated from " + v[0].propagate
+						r += "<br>and " + escapeHTML(missingCyclesToString(v[0].propagatedMissingCycles)) + " propagated from " + escapeHTML(v[0].propagate)
 					}
 				}
 				r += "</a></li>"
@@ -586,10 +595,10 @@ function displayImplicationInfo( full ){
 			for( j = 0 ; j < imp[i][2].length ; j ++ ){
 				if( full || ++n < 10 ){
 					if( i > 0 || j > 0 ) imp_html += "</li><li>";
-					imp_html += imp[i][0]+" &perp; "+imp[i][1];
+					imp_html += escapeHTML(imp[i][0])+" &perp; "+escapeHTML(imp[i][1]);
 					if( imp[i][2][j].length > 0 ){
-						imp_html += " | "+_.pluck(imp[i][2][j],'id').sort().join(", ");
-					} 
+						imp_html += " | "+_.map(_.pluck(imp[i][2][j],'id').sort(),escapeHTML).join(", ");
+					}
 				}  else {
 					more_link = true;
 				}
@@ -632,8 +641,8 @@ function displayGeneralInfo(){
 		} else {
 			displayHide("info_cycle");
 			displayShow("info_summary");
-			document.getElementById("info_exposure").innerHTML = _.pluck(Model.dag.getSources(),'id').join(",");
-			document.getElementById("info_outcome").innerHTML = _.pluck(Model.dag.getTargets(),'id').join(",");
+			document.getElementById("info_exposure").textContent = _.pluck(Model.dag.getSources(),'id').join(",");
+			document.getElementById("info_outcome").textContent = _.pluck(Model.dag.getTargets(),'id').join(",");
 			document.getElementById("info_covariates").innerHTML = Model.dag.getNumberOfVertices()-Model.dag.getSources().length
 			-Model.dag.getTargets().length;
 			document.getElementById("info_frontdoor").innerHTML = Model.dag.countPaths();

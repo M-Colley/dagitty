@@ -643,11 +643,13 @@
                     var d = document.createElement('div');
                     d.className = 'modal-preview-edge';
 
-                    // Extract variable names from "A -> B" or "A <-> B"
-                    var m = line.match(/^"?([^"]+)"?\s*(-?>|<->)\s*"?([^"[]+)"?/);
+                    // Extract variable names from "A -> B" or "A <-> B".
+                    // Sources may be quoted ("my var") or bare; a lazy source
+                    // token keeps "->"/"<->" from being swallowed into the name.
+                    var m = line.match(/^\s*(?:"([^"]+)"|([^\s"]+?))\s*(->|<->)\s*(?:"([^"]+)"|([^\s"[]+))/);
                     var badge = '';
                     if (m && result.corrMat && result.vars) {
-                        var a = m[1].trim(), b = m[3].trim();
+                        var a = (m[1] || m[2]).trim(), b = (m[4] || m[5]).trim();
                         var ai = varIdx[a], bi = varIdx[b];
                         if (ai !== undefined && bi !== undefined) {
                             var r = Math.abs(result.corrMat[ai][bi]);

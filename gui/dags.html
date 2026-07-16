@@ -28,13 +28,15 @@
 
   <link rel="stylesheet" href="dags.css" />
 
-  <script src="js/dagitty.js"></script>
-  <script src="js/example-dags.js"></script>
+  <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
+       keep running the previously cached copy of these scripts after an update. -->
+  <script src="js/dagitty.js?v=2026-07-16"></script>
+  <script src="js/example-dags.js?v=2026-07-16"></script>
   <script src="js/styles/semlike.js"></script>
   <script src="js/styles/original.js"></script>
-  <script src="js/main.js?v=2023-12-13"></script>
+  <script src="js/main.js?v=2026-07-16"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js"></script>
+  <script src="js/causal-discovery.js?v=2026-07-16"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -98,11 +100,11 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js"></script>
-  <script src="js/methods-export.js"></script>
-  <script src="js/publication-export.js"></script>
-  <script src="js/dag-wizard.js"></script>
-  <script src="js/guided-tour.js"></script>
+  <script src="js/ui-enhancements.js?v=2026-07-16"></script>
+  <script src="js/methods-export.js?v=2026-07-16"></script>
+  <script src="js/publication-export.js?v=2026-07-16"></script>
+  <script src="js/dag-wizard.js?v=2026-07-16"></script>
+  <script src="js/guided-tour.js?v=2026-07-16"></script>
 </head>
 
 <body>

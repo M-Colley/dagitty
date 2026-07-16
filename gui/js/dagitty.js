@@ -2602,26 +2602,50 @@ var GraphAnalyzer = {
 	},
 
 	containsCycle: function(g){
+		// Linear-time (O(V+E)) directed-cycle detection via iterative DFS with a
+		// WHITE/GREY/BLACK colouring. Returns false when acyclic, otherwise a
+		// string describing one directed cycle (vertex ids joined by "&rarr;",
+		// repeated node at both ends) — the same format used by callers that
+		// display the cycle. The previous recursive implementation backtracked
+		// (markAsNotVisited), which made it enumerate every simple path and could
+		// take seconds on a dense acyclic graph.
 		var vv = g.vertices.values()
-		for( var i = 0 ; i < vv.length ; i ++ ){
-			var v = vv[i]
-			g.clearVisited()
-			var c = this.searchCycleFrom( v )
-			if( c !== undefined ){
-				var v_count = []
-				for( var j = 0 ; j < c.length ; j ++ ){
-					v_count[c[j]]?v_count[c[j]]++:v_count[c[j]]=1
-				}
-				for( j = 0 ; j < c.length ; j ++ ){
-					if( v_count[c[j]] > 1 ){
-						return c.slice( c.indexOf( c[j] ),  c.lastIndexOf( c[j] )+1 ).join("&rarr;")
+		var WHITE = 0, GREY = 1, BLACK = 2
+		var color = {}
+		for( var i = 0 ; i < vv.length ; i ++ ){ color[vv[i].id] = WHITE }
+		for( i = 0 ; i < vv.length ; i ++ ){
+			if( color[vv[i].id] !== WHITE ){ continue }
+			// Explicit stack of frames { v, children, ci }; children fetched once
+			// per vertex so the whole traversal stays O(V+E).
+			var stack = [ { v: vv[i], children: vv[i].getChildren(), ci: 0 } ]
+			color[vv[i].id] = GREY
+			while( stack.length > 0 ){
+				var top = stack[stack.length-1]
+				if( top.ci < top.children.length ){
+					var w = top.children[top.ci++]  // directed edges only
+					var wc = color[w.id]
+					if( wc === WHITE ){
+						color[w.id] = GREY
+						stack.push( { v: w, children: w.getChildren(), ci: 0 } )
+					} else if( wc === GREY ){
+						// Back edge: w is an ancestor on the current DFS path.
+						var cyc = []
+						for( var k = 0 ; k < stack.length ; k ++ ){
+							if( cyc.length > 0 || stack[k].v.id === w.id ){ cyc.push( stack[k].v.id ) }
+						}
+						cyc.push( w.id )
+						return cyc.join("&rarr;")
 					}
+					// BLACK: already fully explored — skip.
+				} else {
+					color[top.v.id] = BLACK
+					stack.pop()
 				}
 			}
 		}
 		return false
 	},
-	
+
 	searchCycleFrom: function( v, p ){
 		if( p === undefined ){ p = [] }
 		if( Graph.Vertex.isVisited( v ) ){ return p.concat(v.id) } 

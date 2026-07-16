@@ -28,7 +28,42 @@
         root.examples = factory();
   }
 }(typeof self !== 'undefined' ? self : this, function () {
-	return [ 
+	return [
+{
+	// A worked HCI example: a field study of a new interactive system.
+	// Illustrates the three issues HCI researchers meet most often —
+	//  * confounding: PriorExperience and TaskComplexity are common causes of
+	//    Usability and the outcome, so the total-effect adjustment set is
+	//    {PriorExperience, TaskComplexity} — note the mediators are NOT adjusted;
+	//  * mediation: Usability acts on Adoption through Usefulness and Satisfaction
+	//    (compare "total effect" vs "direct effect" in the Causal-effect panel);
+	//  * selection/dropout bias (try it): StudyCompleted is a common effect
+	//    (collider) of Usability and Adoption. Harmless as drawn, but mark it as
+	//    "sample selection" and the total effect becomes non-identifiable — the
+	//    classic attrition problem in longitudinal HCI studies.
+	d : `dag {
+	PriorExperience [pos="0.4,-2.0"]
+	TaskComplexity [pos="-2.2,-2.0"]
+	Usability [exposure,pos="-2.2,0"]
+	Usefulness [pos="0.2,-0.9"]
+	Satisfaction [pos="0.2,0.9"]
+	Adoption [outcome,pos="2.4,0"]
+	StudyCompleted [pos="0.2,2.1"]
+	PriorExperience -> Usability
+	PriorExperience -> Adoption
+	TaskComplexity -> Usability
+	TaskComplexity -> Usefulness
+	Usability -> Usefulness
+	Usability -> Satisfaction
+	Usefulness -> Adoption
+	Satisfaction -> Adoption
+	Usability -> StudyCompleted
+	Adoption -> StudyCompleted
+	}`,
+
+	l: "HCI: technology-acceptance field study"
+},
+
 {
 	d : `bb="-3,-0.5,2,1.2"
 	D [outcome,pos="1,1"]
