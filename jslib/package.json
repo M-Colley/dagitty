@@ -1,0 +1,14 @@
+{
+  "name": "dagitty-jslib",
+  "version": "3.1.0",
+  "private": true,
+  "description": "DAG algorithms used by the DAGitty GUI and R package. Run `npm install` here before running the test suite in ../test.",
+  "license": "GPL-2.0-or-later",
+  "main": "dagitty-node.js",
+  "scripts": {
+    "build": "make"
+  },
+  "dependencies": {
+    "underscore": "^1.13.8"
+  }
+}

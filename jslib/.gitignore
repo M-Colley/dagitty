@@ -3,4 +3,6 @@ dagitty-min.js
 dagitty-node.js
 dagitty.js
 jsmin
+node_modules/
+package-lock.json
 
