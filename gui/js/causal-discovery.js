@@ -5,13 +5,14 @@
  *     — learns an undirected skeleton via partial-correlation / Fisher Z tests
  *     — orients v-structures and applies Meek orientation rules R1-R3
  *
- *  2. Pairwise LiNGAM orientation heuristic
- *     (LiNGAM: Shimizu et al. 2006, https://www.jmlr.org/papers/v7/shimizu06a.html;
- *      pairwise variant inspired by Hyvärinen & Smith 2013, simplified for the browser)
- *     — for each undirected edge left by PC, fits linear regression in both
- *       directions and picks the direction with more Gaussian-like residuals,
- *       because in the correct causal direction X→Y the residuals should be
- *       independent from (and thus less coupled to) the cause X.
+ *  2. DirectLiNGAM (Shimizu, Inazumi, Sogawa, Hyvärinen, Kawahara, Washio,
+ *     Hoyer & Bollen 2011, JMLR 12:1225-1248,
+ *     https://www.jmlr.org/papers/v12/shimizu11a.html)
+ *     — a JavaScript port of `lingam.DirectLiNGAM` from the reference Python
+ *       implementation (https://github.com/cdt15/lingam, v1.13.0): estimates a
+ *       global causal order using an entropy-based mutual-information criterion,
+ *       then orients every edge PC left ambiguous consistently with that order.
+ *       PC's own orientations are supplied as prior knowledge.
  *
  *  3. Correlation-based skeleton (fast exploratory scan)
  *
@@ -20,6 +21,7 @@
  *   // result.modelCode  — DAGitty model string ready to paste / load
  *   // result.edgeCount
  *   // result.undirectedCount — edges left ambiguous (shown as <->)
+ *   // result.causalOrder — variable names, most exogenous first (DirectLiNGAM)
  *   // result.warnings  — array of strings
  */
 
@@ -592,65 +594,317 @@ var CausalDiscovery = (function () {
         return { adj: adj, dirAdj: dirAdj, sepset: sepset, vars: vars, corrMat: C };
     }
 
-    // ── LiNGAM-inspired pairwise orientation ──────────────────────────────────
+    // ── DirectLiNGAM orientation ──────────────────────────────────────────────
+    //
+    // Direct-LiNGAM (Shimizu, Inazumi, Sogawa, Hyvärinen, Kawahara, Washio,
+    // Hoyer & Bollen 2011, JMLR 12:1225-1248), matching the reference Python
+    // implementation `lingam.DirectLiNGAM` (cdt15/lingam v1.13.0).
+    //
+    // Rather than deciding each edge on its own, DirectLiNGAM estimates a single
+    // global CAUSAL ORDER: it repeatedly picks the most exogenous remaining
+    // variable, regresses it out of the others, and recurses. Two consequences
+    // matter a lot here:
+    //
+    //   * every orientation is consistent with one total order, so the result
+    //     cannot contain a cycle (the previous pairwise heuristic decided each
+    //     edge independently and could easily produce A→B→C→A, which DAGitty
+    //     then rejects as not a DAG);
+    //   * the independence criterion is the entropy-based approximation of
+    //     mutual information used by the reference implementation, which is
+    //     considerably more reliable than the |corr(cause, residual²)| proxy
+    //     used before.
+    //
+    // Orientations PC already established (v-structures and the Meek rules) are
+    // passed in as prior knowledge, exactly as `DirectLiNGAM(prior_knowledge=…)`
+    // does: a variable is only a candidate root while none of its known parents
+    // are still unplaced.
 
-    /**
-     * For a pair (xi, xj) decide direction using the Hyvärinen-Smith (2013)
-     * residual-independence criterion:
-     *   - fit xj = a·xi + c_a + e_a  (xi → xj model, OLS with intercept)
-     *   - fit xi = b·xj + c_b + e_b  (xj → xi model, OLS with intercept)
-     *   - score(xi→xj) = |corr(xi, e_a²)|  — how dependent is the cause on
-     *     the squared residuals? Lower = more independent = more likely correct.
-     *   - pick the direction with the LOWER score.
-     * Returns true if xi → xj, false if xj → xi.
-     */
-    function lingamDir(xi, xj) {
-        var mx = mean(xi), my = mean(xj);
-        var num = 0, dx2 = 0, dy2 = 0;
-        for (var i = 0; i < xi.length; i++) {
-            var dxi = xi[i] - mx, dxj = xj[i] - my;
-            num += dxi * dxj; dx2 += dxi * dxi; dy2 += dxj * dxj;
-        }
-        // OLS slopes (with intercept absorbed into deviation form)
-        var a = (dx2 > 1e-14) ? num / dx2 : 0;  // xj = a·xi + (my - a·mx) + e_a
-        var b = (dy2 > 1e-14) ? num / dy2 : 0;  // xi = b·xj + (mx - b·my) + e_b
-
-        // Correct OLS residuals include the intercept:
-        //   e_a[i] = (xj[i] - my) - a·(xi[i] - mx)
-        //   e_b[i] = (xi[i] - mx) - b·(xj[i] - my)
-        var ea = [], eb = [];
-        for (var i = 0; i < xi.length; i++) {
-            ea.push((xj[i] - my) - a * (xi[i] - mx));
-            eb.push((xi[i] - mx) - b * (xj[i] - my));
-        }
-
-        // Dependence measure: |corr(cause, residual²)|
-        var ea2 = ea.map(function(e){ return e * e; });
-        var eb2 = eb.map(function(e){ return e * e; });
-
-        var scoreXtoY = Math.abs(pearsonR(xi, ea2));   // xi → xj direction
-        var scoreYtoX = Math.abs(pearsonR(xj, eb2));   // xj → xi direction
-
-        return scoreXtoY <= scoreYtoX; // true = xi → xj
+    /** log(cosh(x)) without overflowing for large |x| (cosh(710) = Infinity). */
+    function logCosh(x) {
+        var a = Math.abs(x);
+        return a + Math.log1p(Math.exp(-2 * a)) - Math.LN2;
     }
 
     /**
-     * Apply LiNGAM pairwise test to remaining undirected edges in-place.
-     * Modifies adj and dirAdj.
+     * Hyvärinen's (1998) maximum-entropy approximation of differential entropy,
+     * the `_entropy` function of the reference implementation. Expects `u` to be
+     * standardised (mean 0, sd 1).
      */
-    function applyLiNGAM(result, data, vars) {
-        var adj = result.adj, dirAdj = result.dirAdj, p = vars.length;
-        for (var i = 0; i < p; i++) {
-            for (var j = i + 1; j < p; j++) {
-                if (!adj[i][j]) continue;
-                var xi = data.map(function(row){ return row[vars[i]]; });
-                var xj = data.map(function(row){ return row[vars[j]]; });
-                var iToJ = lingamDir(xi, xj);
-                adj[i][j] = adj[j][i] = false;
-                if (iToJ) dirAdj[i][j] = true;
-                else       dirAdj[j][i] = true;
+    function entropyApprox(u) {
+        var k1 = 79.047, k2 = 7.4129, gamma = 0.37457;
+        var n = u.length, s1 = 0, s2 = 0;
+        for (var i = 0; i < n; i++) {
+            var v = u[i];
+            s1 += logCosh(v);
+            s2 += v * Math.exp(-(v * v) / 2);
+        }
+        s1 /= n; s2 /= n;
+        return (1 + Math.log(2 * Math.PI)) / 2 -
+               k1 * (s1 - gamma) * (s1 - gamma) -
+               k2 * s2 * s2;
+    }
+
+    /** Mean-0/sd-1 copy of an array. Returns null for a constant column. */
+    function standardize(x) {
+        var n = x.length, m = mean(x), s = 0;
+        for (var i = 0; i < n; i++) { var d = x[i] - m; s += d * d; }
+        s = Math.sqrt(s / (n - 1));
+        if (!(s > 1e-12)) return null;
+        var out = new Array(n);
+        for (var j = 0; j < n; j++) out[j] = (x[j] - m) / s;
+        return out;
+    }
+
+    /**
+     * Residual of xi after regressing on xj, re-standardised — the `_residual`
+     * step of DirectLiNGAM. Both inputs are assumed standardised, so the OLS
+     * slope is just their covariance. Returns null if the residual vanishes
+     * (xi and xj perfectly collinear).
+     */
+    function residualStd(xi, xj) {
+        var n = xi.length, cov = 0;
+        for (var i = 0; i < n; i++) cov += xi[i] * xj[i];
+        cov /= (n - 1);
+        var r = new Array(n);
+        for (var k = 0; k < n; k++) r[k] = xi[k] - cov * xj[k];
+        return standardize(r);
+    }
+
+    /**
+     * One step of the causal-order search: return the most exogenous of the
+     * remaining variables, i.e. the one whose independence-based score
+     * `_diff_mutual_info` is least often negative against the others.
+     *
+     * `cols[i]` holds the current (already residualised) data for variable i,
+     * `U` the indices still to be placed, and `candidates ⊆ U` the subset
+     * allowed to be picked next given the prior knowledge.
+     */
+    function searchCausalOrder(cols, U, candidates) {
+        if (candidates.length === 1) return candidates[0];
+
+        // Standardise once per step and cache each variable's own entropy: it
+        // does not depend on which partner it is compared against.
+        var std = {}, ent = {};
+        U.forEach(function (i) {
+            var s = standardize(cols[i]);
+            std[i] = s;
+            ent[i] = s ? entropyApprox(s) : 0;
+        });
+
+        // H(residual of i regressed on j), memoised — every unordered pair is
+        // otherwise scored twice, once from each end.
+        var hCache = {};
+        function hRes(i, j) {
+            var k = i + ',' + j;
+            if (k in hCache) return hCache[k];
+            var r = residualStd(std[i], std[j]);
+            return (hCache[k] = r ? entropyApprox(r) : null);
+        }
+
+        var best = candidates[0], bestM = Infinity;
+        candidates.forEach(function (i) {
+            if (!std[i]) return;                 // constant column: never a root
+            var M = 0;
+            U.forEach(function (j) {
+                if (i === j || !std[j]) return;
+                var hij = hRes(i, j), hji = hRes(j, i);
+                if (hij === null || hji === null) return;
+                // Negative ⇒ i → j is the better-supported direction; only the
+                // negative part contributes, as in the reference implementation.
+                var neg = Math.min(0, (ent[j] + hij) - (ent[i] + hji));
+                M += neg * neg;
+            });
+            if (M < bestM) { bestM = M; best = i; }
+        });
+        return best;
+    }
+
+    /**
+     * Estimate the full causal order with DirectLiNGAM.
+     *
+     * @param {Array}    cols        column arrays, one per variable
+     * @param {Array}    dirAdj      PC's directed edges — used as prior knowledge
+     * @param {Function} [onStep]    called with (placed, total) after each step
+     * @returns {number[]} variable indices, most exogenous first
+     */
+    function directLingamOrder(cols, dirAdj, onStep) {
+        var p = cols.length;
+        var work = cols.map(function (c) { return c.slice(); });
+        var U = [], order = [];
+        for (var i = 0; i < p; i++) U.push(i);
+
+        while (U.length > 0) {
+            // Prior knowledge: a variable cannot be the next root while one of
+            // its PC-established parents is still unplaced.
+            var candidates = U.filter(function (i) {
+                return !U.some(function (j) { return j !== i && dirAdj[j][i]; });
+            });
+            if (candidates.length === 0) candidates = U;   // shouldn't happen: PC's directed part is acyclic
+
+            var root = searchCausalOrder(work, U, candidates);
+            order.push(root);
+            U = U.filter(function (i) { return i !== root; });
+
+            if (U.length > 1) {
+                // Regress the chosen root out of everything that is left.
+                var rs = standardize(work[root]);
+                if (rs) {
+                    U.forEach(function (i) {
+                        var xs = standardize(work[i]);
+                        if (!xs) return;
+                        var res = residualStd(xs, rs);
+                        if (res) work[i] = res;
+                    });
+                }
+            }
+            if (onStep) onStep(order.length, p);
+        }
+        return order;
+    }
+
+    /** Is `to` reachable from `from` along directed edges? */
+    function reachable(dirAdj, from, to, p) {
+        if (from === to) return true;
+        var seen = new Array(p).fill(false);
+        var stack = [from];
+        seen[from] = true;
+        while (stack.length) {
+            var v = stack.pop();
+            for (var w = 0; w < p; w++) {
+                if (dirAdj[v][w] && !seen[w]) {
+                    if (w === to) return true;
+                    seen[w] = true;
+                    stack.push(w);
+                }
             }
         }
+        return false;
+    }
+
+    /**
+     * Orient the edges PC left undirected using a DirectLiNGAM causal order,
+     * in place. Modifies `result.adj` / `result.dirAdj` and records the
+     * estimated order on `result.causalOrder`.
+     *
+     * Each edge is oriented to agree with the causal order; if that would close
+     * a cycle against an orientation PC already fixed, the reverse is tried, and
+     * if neither is safe the edge stays undirected (rendered as ↔). The output
+     * is therefore always a DAG.
+     */
+    function applyLiNGAM(result, data, vars, onStep) {
+        var adj = result.adj, dirAdj = result.dirAdj, p = vars.length;
+
+        var pending = [];
+        for (var i = 0; i < p; i++)
+            for (var j = i + 1; j < p; j++)
+                if (adj[i][j]) pending.push([i, j]);
+
+        var cols = vars.map(function (v) {
+            return data.map(function (row) { return row[v]; });
+        });
+
+        var order = directLingamOrder(cols, dirAdj, onStep);
+        result.causalOrder = order.map(function (i) { return vars[i]; });
+
+        var rank = new Array(p);
+        order.forEach(function (v, k) { rank[v] = k; });
+        result.rank = rank;
+
+        pending.forEach(function (e) {
+            var a = e[0], b = e[1];
+            var from = rank[a] <= rank[b] ? a : b;
+            var to   = from === a ? b : a;
+            if (!reachable(dirAdj, to, from, p)) {
+                adj[a][b] = adj[b][a] = false;
+                dirAdj[from][to] = true;
+            } else if (!reachable(dirAdj, from, to, p)) {
+                adj[a][b] = adj[b][a] = false;
+                dirAdj[to][from] = true;
+            }
+            // else: either direction closes a cycle — leave it undirected.
+        });
+    }
+
+    // ── Acyclicity repair ─────────────────────────────────────────────────────
+    //
+    // PC's orientation rules assume a perfect conditional-independence oracle.
+    // On real (finite) samples the recovered skeleton contains mistakes, and the
+    // v-structure + Meek passes can then commit to a set of directions that
+    // contains a directed cycle. A cyclic model is a dead end for the user:
+    // DAGitty answers "Can't determine causal effects for cyclic models" and no
+    // analysis panel works. So repair the orientation before emitting it.
+
+    /** Find one directed cycle as a list of [from,to] edges, or null. */
+    function findDirectedCycle(dirAdj, p) {
+        var colour = new Array(p).fill(0), parent = new Array(p).fill(-1), found = null;
+        function visit(u) {
+            colour[u] = 1;
+            for (var v = 0; v < p; v++) {
+                if (!dirAdj[u][v]) continue;
+                if (colour[v] === 1) {                 // back edge closes v ⇝ u → v
+                    var cyc = [[u, v]], x = u;
+                    while (x !== v) { cyc.push([parent[x], x]); x = parent[x]; }
+                    found = cyc;
+                    return true;
+                }
+                if (colour[v] === 0) { parent[v] = u; if (visit(v)) return true; }
+            }
+            colour[u] = 2;
+            return false;
+        }
+        for (var s = 0; s < p && !found; s++) if (colour[s] === 0) visit(s);
+        return found;
+    }
+
+    /**
+     * Make the orientation acyclic, in place. For each cycle, the least
+     * defensible edge is picked — the one that most contradicts the
+     * DirectLiNGAM causal order, breaking ties by weakest marginal correlation
+     * — and reversed if that is provably safe, otherwise downgraded to an
+     * undirected (↔) edge. Each edge is downgraded at most once, so this
+     * terminates.
+     *
+     * @returns {{reversed: number, relaxed: number}}
+     */
+    function enforceAcyclic(result) {
+        var adj = result.adj, dirAdj = result.dirAdj, p = result.vars.length;
+        var rank = result.rank, corr = result.corrMat;
+        var reversed = 0, relaxed = 0, touched = {};
+        var cyc;
+
+        while ((cyc = findDirectedCycle(dirAdj, p))) {
+            var pick = cyc[0], pickScore = -Infinity;
+            cyc.forEach(function (e) {
+                // Higher score = worse edge. Order violation dominates; the
+                // weakest association breaks ties.
+                var order = rank ? (rank[e[0]] - rank[e[1]]) : 0;
+                var weak  = corr ? -Math.abs(corr[e[0]][e[1]]) : 0;
+                var s = order * 1000 + weak;
+                if (s > pickScore) { pickScore = s; pick = e; }
+            });
+
+            var u = pick[0], v = pick[1], key = u + ',' + v;
+            dirAdj[u][v] = false;
+            if (!touched[key] && !reachable(dirAdj, u, v, p)) {
+                dirAdj[v][u] = true;                    // safe reversal
+                touched[key] = true;
+                reversed++;
+            } else {
+                adj[u][v] = adj[v][u] = true;           // give up on a direction
+                relaxed++;
+            }
+        }
+        return { reversed: reversed, relaxed: relaxed };
+    }
+
+    /** Plain-language note about what the acyclicity repair had to change. */
+    function repairWarning(r) {
+        var parts = [];
+        if (r.reversed) parts.push(r.reversed + ' arrow' + (r.reversed !== 1 ? 's were' : ' was') + ' reversed');
+        if (r.relaxed)  parts.push(r.relaxed  + ' arrow' + (r.relaxed  !== 1 ? 's were' : ' was') + ' left undirected (↔)');
+        return 'The algorithm produced a circular chain of arrows, which cannot be a DAG; ' +
+               parts.join(' and ') + ' to resolve it. Check those relationships against your ' +
+               'domain knowledge — they are the least certain part of this diagram.';
     }
 
     // ── Format output as DAGitty model code ───────────────────────────────────
@@ -719,12 +973,12 @@ var CausalDiscovery = (function () {
     // ── Main entry point ──────────────────────────────────────────────────────
 
     /**
-     * Full pipeline: parse CSV → PC algorithm → optional LiNGAM → DAGitty code.
+     * Full pipeline: parse CSV → PC algorithm → optional DirectLiNGAM → DAGitty code.
      *
      * @param {string}  csvText   Raw CSV text
      * @param {number}  alpha     Significance level (default 0.05)
-     * @param {boolean} useLingam Whether to apply LiNGAM orientation (default true)
-     * @returns {{ modelCode, nodeCount, edgeCount, undirectedCount, warnings, n }}
+     * @param {boolean} useLingam Whether to apply DirectLiNGAM orientation (default true)
+     * @returns {{ modelCode, nodeCount, edgeCount, undirectedCount, causalOrder, warnings, n }}
      */
     function discoverFromCSV(csvText, alpha, useLingam) {
         if (alpha === undefined) alpha = 0.05;
@@ -745,15 +999,25 @@ var CausalDiscovery = (function () {
 
         var result = pcAlgorithm(data, headers, alpha);
 
+        // Repair before orienting, so DirectLiNGAM starts from an acyclic base…
+        var repair = enforceAcyclic(result);
+
         if (useLingam) {
             applyLiNGAM(result, data, headers);
-            // Check if LiNGAM was able to orient all edges
+            // …and again afterwards, so the emitted model is always a DAG.
+            var r2 = enforceAcyclic(result);
+            repair.reversed += r2.reversed;
+            repair.relaxed  += r2.relaxed;
+
+            // Check if DirectLiNGAM was able to orient all edges
             var leftUndir = 0;
             for (var i = 0; i < headers.length; i++)
                 for (var j = i+1; j < headers.length; j++)
                     if (result.adj[i][j]) leftUndir++;
             if (leftUndir > 0) warnings.push(leftUndir + ' edge(s) could not be oriented — shown as bidirected (<->).');
         }
+        if (repair.reversed + repair.relaxed > 0)
+            warnings.push(repairWarning(repair));
 
         var counts = countEdges(result);
         var modelCode = toModelCode(result, headers);
@@ -764,6 +1028,7 @@ var CausalDiscovery = (function () {
             edgeCount: counts.directed + counts.undirected,
             directedCount: counts.directed,
             undirectedCount: counts.undirected,
+            causalOrder: result.causalOrder || null,
             warnings: warnings,
             n: n
         };
@@ -843,10 +1108,22 @@ var CausalDiscovery = (function () {
         // Step 2 — PC algorithm (async, yields between levels AND within levels)
         return pcAlgorithmAsync(data, headers, alpha, prog, opts).then(function (result) {
 
-            // Step 3 — LiNGAM orientation (fast enough to stay sync)
+            // Repair before orienting, so DirectLiNGAM starts from an acyclic base.
+            var repair = enforceAcyclic(result);
+
+            // Step 3 — DirectLiNGAM orientation. The causal-order search is
+            // O(p³·n), so report progress as each variable is placed.
             if (useLingam) {
-                prog(88, 'Applying LiNGAM orientation…');
-                applyLiNGAM(result, data, headers);
+                prog(80, 'Estimating causal order (DirectLiNGAM)…');
+                applyLiNGAM(result, data, headers, function (placed, total) {
+                    prog(80 + Math.round(15 * placed / total),
+                         'Estimating causal order (DirectLiNGAM) — ' + placed + '/' + total + '…');
+                });
+                // …and again afterwards, so the emitted model is always a DAG.
+                var r2 = enforceAcyclic(result);
+                repair.reversed += r2.reversed;
+                repair.relaxed  += r2.relaxed;
+
                 var leftUndir = 0;
                 for (var i = 0; i < headers.length; i++)
                     for (var j = i + 1; j < headers.length; j++)
@@ -855,6 +1132,8 @@ var CausalDiscovery = (function () {
                     warnings.push(leftUndir +
                         ' edge(s) could not be oriented — shown as bidirected (↔).');
             }
+            if (repair.reversed + repair.relaxed > 0)
+                warnings.push(repairWarning(repair));
 
             prog(95, 'Building diagram…');
 
@@ -869,6 +1148,7 @@ var CausalDiscovery = (function () {
                 edgeCount:      counts.directed + counts.undirected,
                 directedCount:  counts.directed,
                 undirectedCount: counts.undirected,
+                causalOrder:    result.causalOrder || null,
                 warnings:       warnings,
                 n:              n,
                 vars:           headers,
@@ -883,6 +1163,8 @@ var CausalDiscovery = (function () {
         pcAlgorithm:          pcAlgorithm,
         pcAlgorithmAsync:     pcAlgorithmAsync,
         applyLiNGAM:          applyLiNGAM,
+        directLingamOrder:    directLingamOrder,
+        entropyApprox:        entropyApprox,
         discoverFromCSV:      discoverFromCSV,
         discoverFromCSVAsync: discoverFromCSVAsync,
         correlationMatrix:    correlationMatrix,
