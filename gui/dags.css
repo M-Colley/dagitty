@@ -1202,6 +1202,14 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
 [data-theme="dark"] #canvas svg path[stroke="black"] { stroke: #e2e8f0; }
 [data-theme="dark"] #canvas svg path.arrowfront,
 [data-theme="dark"] #canvas svg path.arrowback { fill: #e2e8f0; }
+/* Variable names sit on a white rect.textbg (fill is a presentation attribute)
+   so they stay readable where they cross an edge. Left alone, every label on a
+   dark canvas became a white sticker with black text. Recolour the plate to the
+   canvas background and the text to light — it keeps doing its job. Exports are
+   unaffected: CSS is not serialised into the exported SVG, so figures stay
+   black-on-white whatever theme you are working in. */
+[data-theme="dark"] #canvas svg rect.textbg    { fill: #0f172a; }
+[data-theme="dark"] #canvas svg text.nodelabel { fill: #e2e8f0; }
 [data-theme="dark"] textarea { background: #1e293b; color: var(--text); }
 [data-theme="dark"] textarea:focus { background: #162032; }
 /* main.js sets an inline white background on the model-code box (on load and as
