@@ -93,9 +93,14 @@
          'Confounding detected — a naive comparison will be biased.'],
         [/No open biasing paths\./gi,
          'No confounding detected — no adjustment needed.'],
-        [/Correctly adjusted\./gi,
+        // \b is load-bearing: "Incorrectly adjusted." CONTAINS "correctly
+        // adjusted.", so without it this rule fired inside the negative message
+        // and turned it into "InYour chosen controls successfully block all
+        // confounding." — telling the user their adjustment was fine at exactly
+        // the moment it was not.
+        [/\bCorrectly adjusted\./gi,
          'Your chosen controls successfully block all confounding.'],
-        [/Incorrectly adjusted\./gi,
+        [/\bIncorrectly adjusted\./gi,
          'Your chosen controls do NOT fully block confounding.'],
         [/No exposure defined\./gi,
          'Mark a variable as exposure first (click it, check "exposure").'],
