@@ -627,6 +627,21 @@
                 result.vars.forEach(function (v, i) { varIdx[v] = i; });
             }
 
+            // DirectLiNGAM's estimated causal order is the single most useful
+            // thing to sanity-check against domain knowledge, so show it first.
+            if (result.causalOrder && result.causalOrder.length) {
+                var ord = document.createElement('p');
+                ord.className = 'modal-preview-order';
+                ord.appendChild(document.createTextNode('Estimated causal order: '));
+                var strong = document.createElement('strong');
+                strong.textContent = result.causalOrder.join(' → ');
+                ord.appendChild(strong);
+                ord.title = 'DirectLiNGAM ranks the variables from most to least exogenous. ' +
+                    'Anything that looks backwards here is a sign the assumptions ' +
+                    '(linearity, non-Gaussian noise, no unmeasured confounding) do not hold.';
+                content.appendChild(ord);
+            }
+
             var edges = result.modelCode.split('\n').filter(function (l) {
                 return l.indexOf('->') !== -1 || l.indexOf('<->') !== -1;
             });
@@ -668,10 +683,22 @@
         }
     };
 
+    // SheetJS is only needed when the user picks an Excel/ODS file, so it is
+    // loaded lazily. Served from the vendor's own CDN (SheetJS was removed from
+    // npm/cdnjs, which is stuck on the vulnerable 0.18.5) and pinned with a
+    // Subresource Integrity hash, so a compromised or swapped CDN file is
+    // rejected by the browser rather than executed.
+    var SHEETJS_VERSION   = '0.20.3';
+    var SHEETJS_URL       = 'https://cdn.sheetjs.com/xlsx-' + SHEETJS_VERSION +
+                            '/package/dist/xlsx.full.min.js';
+    var SHEETJS_INTEGRITY = 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT';
+
     function _loadSheetJS(cb) {
         if (window.XLSX) { cb(true); return; }
         var s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.src = SHEETJS_URL;
+        s.integrity = SHEETJS_INTEGRITY;
+        s.crossOrigin = 'anonymous';
         s.onload = function () { cb(true); };
         s.onerror = function () { cb(false); };
         document.head.appendChild(s);

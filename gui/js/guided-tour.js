@@ -34,6 +34,13 @@
                   'analysis), or <strong>unobserved</strong> (real but unmeasured).'
         },
         {
+            target: '#diagram_check',
+            title: 'Catch mistakes early',
+            body: 'This panel names the specific problems in your diagram in plain language — controlling for a ' +
+                  '<strong>mediator</strong> or a <strong>collider</strong>, an arrow drawn the wrong way round, ' +
+                  'selecting your sample on a common effect. These are the mistakes that quietly bias real studies.'
+        },
+        {
             target: '#causal_effect_block',
             title: 'What must you control for?',
             body: 'The payoff: once you set an exposure and outcome, DAGitty tells you exactly which variables you must ' +
@@ -54,8 +61,10 @@
         {
             target: '#model_data',
             title: 'Save, share, reproduce',
-            body: 'Your model is plain text. <strong>Copy</strong> or <strong>Download</strong> it, or use ' +
-                  '<em>Model → Export</em> for an image or LaTeX. Anyone can paste the code back to get the exact same diagram.'
+            body: 'Your model is plain text. <strong>Download</strong> it here and reopen it later with ' +
+                  '<em>Model → Open model file…</em> (or just drag the file onto the page). ' +
+                  '<em>Model → Copy shareable link</em> packs the whole diagram into a URL — nothing is uploaded anywhere. ' +
+                  'Your work is also saved in this browser automatically, so a reload will not lose it.'
         },
         {
             target: '#btn-beginner-mode',

@@ -15,9 +15,18 @@ approachable for people new to causal inference, while keeping all of the origin
 - 🧭 **Interactive guided tutorial** for first-time users (*Help → Interactive tutorial*, and a one-time prompt on first visit)
 - 📝 **"Assumptions for your paper"** — a one-click, plain-language statement of the (often untestable) assumptions your diagram requires to read a result as causal, ready to paste into a methods or limitations section
 - 💬 Plain-language analysis output (e.g. *“Your chosen controls block all confounding”* instead of *“Correctly adjusted”*)
+- 🩺 **Diagram check** — names the specific mistake and the variable involved (*“M sits on a causal pathway
+  from X to Y — controlling for it removes part of the effect you are trying to measure”*): mediators,
+  colliders, arrows drawn the wrong way round, sample selection on a common effect
 - 🧰 Beginner / Advanced mode, undo / redo, empty-canvas hints, and inline help on every concept
-- 📂 Machine-readable model code plus PNG / JPEG / SVG / LaTeX export and one-click download
-- 🔬 Optional **Generate DAG from data** (in-browser PC + [LiNGAM](https://www.jmlr.org/papers/v7/shimizu06a.html) causal discovery)
+- 💾 **Never lose work** — the diagram is saved in your browser and restored on the next visit;
+  open a saved `.dag` file from the Model menu or by dragging it onto the page
+- 🔗 **Copy shareable link** — the whole diagram travels inside the URL, so a collaborator opening it
+  sees exactly your model. Nothing is uploaded anywhere
+- 📂 Machine-readable model code plus PNG / JPEG / SVG / LaTeX / R (dagitty + ggdag) export
+- 🔬 Optional **Generate DAG from data** — in-browser causal discovery with the PC algorithm plus
+  [DirectLiNGAM](https://www.jmlr.org/papers/v12/shimizu11a.html) (a port of
+  [`lingam.DirectLiNGAM`](https://github.com/cdt15/lingam) v1.13.0); the suggested model is always a DAG
 
 The diagram editing and analysis engine is the original DAGitty by Johannes Textor & Benito van der Zander
 (GNU GPL v2). The full upstream project description follows.

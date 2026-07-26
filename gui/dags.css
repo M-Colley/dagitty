@@ -972,6 +972,18 @@ kbd {
   padding: .1em 0;
 }
 
+/* DirectLiNGAM's estimated causal order, shown above the discovered edges. */
+.modal-preview-order {
+  font-size: 11.5px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin: 0 0 .6em !important;
+  padding-bottom: .5em;
+  border-bottom: 1px dashed var(--border);
+  word-break: break-word;
+}
+.modal-preview-order strong { color: var(--primary-h); }
+
 .modal-footer {
   display: flex;
   gap: .5em;
@@ -1358,3 +1370,141 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
   #tour-prompt { flex-wrap: wrap; justify-content: center; border-radius: var(--radius-lg); text-align: center; }
   #tour-card { width: calc(100vw - 16px); }
 }
+
+/* ── Diagram check ───────────────────────────────────────────────────────── */
+/* Plain-language list of the specific problems found in the current diagram. */
+
+.dcheck-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--warn-border);
+  color: #7c2d12;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+[data-theme="dark"] .dcheck-count { background: #92400e; color: #fde68a; }
+
+#diagram_check { padding: 0 .75em .5em; }
+
+.dcheck-list { list-style: none; margin: 0; padding: 0; }
+
+.dcheck-item {
+  display: flex;
+  gap: .5em;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+  padding: .5em .6em;
+  margin-bottom: .35em;
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+  background: var(--surface);
+}
+.dcheck-item:last-child { margin-bottom: 0; }
+.dcheck-text strong { color: var(--text); }
+
+.dcheck-badge {
+  flex: 0 0 auto;
+  width: 15px; height: 15px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.dcheck-error  { background: var(--error-bg);   border-left-color: var(--error); }
+.dcheck-error  .dcheck-badge { background: var(--error); }
+.dcheck-warn   { background: var(--warn-bg);    border-left-color: var(--warn-border); }
+.dcheck-warn   .dcheck-badge { background: #d97706; }
+.dcheck-info   { background: var(--primary-bg); border-left-color: var(--primary-dim); }
+.dcheck-info   .dcheck-badge { background: var(--primary); }
+.dcheck-ok     { background: var(--success-bg); border-left-color: var(--success); }
+.dcheck-ok     .dcheck-badge { background: var(--success); }
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+/* Top-centre, so it never collides with the first-run tour prompt at the
+   bottom of the screen. */
+
+#app-toast {
+  position: fixed;
+  z-index: 9500;
+  left: 50%;
+  top: calc(var(--menu-h) + 12px);
+  transform: translate(-50%, -8px);
+  display: none;
+  align-items: flex-start;
+  gap: .6em;
+  max-width: min(30em, calc(100vw - 24px));
+  padding: .7em .8em .7em 1em;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transition: opacity var(--t), transform var(--t);
+}
+#app-toast.on { display: flex; opacity: 1; transform: translate(-50%, 0); }
+#app-toast.toast-ok    { border-left-color: var(--success); }
+#app-toast.toast-error { border-left-color: var(--error); }
+
+.toast-text { font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+
+.toast-action {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  padding: .3em .6em;
+  white-space: nowrap;
+}
+
+.toast-close {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: .2em .1em;
+  cursor: pointer;
+}
+.toast-close:hover { color: var(--text); background: none; }
+
+/* ── Drag-and-drop overlay ───────────────────────────────────────────────── */
+
+#drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, .45);
+  backdrop-filter: blur(1.5px);
+}
+.drop-overlay-inner {
+  text-align: center;
+  padding: 1.6em 2.2em;
+  border: 2px dashed var(--primary-dim);
+  border-radius: var(--radius-lg);
+  background: var(--sidebar-bg);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+}
+.drop-title {
+  margin: 0 0 .35em;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary-h);
+}
+.drop-sub { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }

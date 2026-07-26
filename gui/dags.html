@@ -30,13 +30,13 @@
 
   <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
        keep running the previously cached copy of these scripts after an update. -->
-  <script src="js/dagitty.js?v=2026-07-16"></script>
-  <script src="js/example-dags.js?v=2026-07-16"></script>
+  <script src="js/dagitty.js?v=2026-07-26"></script>
+  <script src="js/example-dags.js?v=2026-07-26"></script>
   <script src="js/styles/semlike.js"></script>
   <script src="js/styles/original.js"></script>
-  <script src="js/main.js?v=2026-07-16"></script>
+  <script src="js/main.js?v=2026-07-26"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js?v=2026-07-16"></script>
+  <script src="js/causal-discovery.js?v=2026-07-26"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -100,11 +100,14 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js?v=2026-07-16"></script>
-  <script src="js/methods-export.js?v=2026-07-16"></script>
-  <script src="js/publication-export.js?v=2026-07-16"></script>
-  <script src="js/dag-wizard.js?v=2026-07-16"></script>
-  <script src="js/guided-tour.js?v=2026-07-16"></script>
+  <script src="js/ui-enhancements.js?v=2026-07-26"></script>
+  <script src="js/methods-export.js?v=2026-07-26"></script>
+  <script src="js/publication-export.js?v=2026-07-26"></script>
+  <script src="js/dag-wizard.js?v=2026-07-26"></script>
+  <script src="js/guided-tour.js?v=2026-07-26"></script>
+  <script src="js/diagram-check.js?v=2026-07-26"></script>
+  <!-- workspace.js restores saved/shared models, so it must run last -->
+  <script src="js/workspace.js?v=2026-07-26"></script>
 </head>
 
 <body>
@@ -130,7 +133,10 @@
       <a href="javascript:void(0)" id="menu_model_title" role="menuitem" aria-haspopup="true">Model</a>
       <ul id="menu_model" style="z-index:50" role="menu">
         <li><a href="#" onclick="newModel();displayHide('menu_model')">New model</a></li>
+        <li><a href="#" onclick="Workspace.openFile();displayHide('menu_model')">Open model file…</a></li>
         <li><a href="#" onclick="loadOnlineForm();displayHide('menu_model')">Load from dagitty.net</a></li>
+        <li class="menu-sep"></li>
+        <li><a href="#" onclick="Workspace.shareLink();displayHide('menu_model')">Copy shareable link</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Generate DAG from data…</a></li>
         <li class="menu-sep"></li>
@@ -163,7 +169,8 @@
         <li><a href="#" onclick="how('Click a variable, then use the Rename button in the Variable panel — or hover and press R.')">Rename a variable</a></li>
         <li><a href="#" onclick="how('Click the start variable, then click the end variable to draw an arrow. Clicking the same pair again removes the arrow.')">Add / remove an arrow</a></li>
         <li><a href="#" onclick="how('Click a variable to select it, then press Delete in the Variable panel — or hover and press D.')">Delete a variable</a></li>
-        <li><a href="#" onclick="how('Copy the Model code text and paste it into a text file. To reload: paste it back and click Update DAG. Or use Model → Export.')">Save / load a model</a></li>
+        <li><a href="#" onclick="how('Save: Model → Download (or the Download button under Model code) writes a .dag file. Open: Model → Open model file… — or just drag the file onto the page. Your work is also saved automatically in this browser and restored next time.')">Save / open a model</a></li>
+        <li><a href="#" onclick="how('Model → Copy shareable link puts the whole diagram inside the link itself. Anyone who opens it sees exactly your model — nothing is uploaded anywhere.')">Share a diagram</a></li>
         <li><a href="#" onclick="how('Click a variable and check &quot;exposure&quot; in the Variable panel (or press E). This marks the cause you are studying.')">Set the exposure (cause)</a></li>
         <li><a href="#" onclick="how('Click a variable and check &quot;outcome&quot; in the Variable panel (or press O). This marks the effect you are studying.')">Set the outcome (effect)</a></li>
         <li><a href="#" onclick="how('Adjusted = controlled for in your model. Click a variable and check &quot;adjusted&quot; (or press A). The right panel shows whether your choice is sufficient.')">Mark a variable as adjusted</a></li>
@@ -426,6 +433,16 @@ E -&gt; D
   <!-- ── Right sidebar ──────────────────────────────────────────────────── -->
   <div id="rlegend">
 
+    <!-- Diagram check -->
+    <h3 onclick="displayToggle('diagram_check')">
+      <span class="chev" id="a_diagram_check" data-open="1"></span>
+      Diagram check
+      <span id="dcheck_count" class="dcheck-count" style="display:none" aria-label="items needing attention"></span>
+      <span class="help-tip" style="margin-left:auto;flex-shrink:0"
+        title="Looks for the mistakes people make most often — controlling for a mediator or a collider, arrows drawn the wrong way round, selecting the sample on a common effect — and names the variable involved.">?</span>
+    </h3>
+    <div id="diagram_check"></div>
+
     <!-- Causal effect identification -->
     <h3 onclick="displayToggle('causal_effect_block')">
       <span class="chev" id="a_causal_effect" data-open="1"></span>
@@ -498,7 +515,7 @@ E -&gt; D
       <table id="info_summary">
         <tr><td title="The cause variable being studied">exposure(s)</td>    <td class="info" id="info_exposure">not set</td></tr>
         <tr><td title="The effect variable being studied">outcome(s)</td>    <td class="info" id="info_outcome">not set</td></tr>
-        <tr><td title="Variables that are neither exposure nor outcome">covariates</td>   <td class="info" id="info_covariates">0</td></tr>
+        <tr><td title="Variables that are neither the exposure nor the outcome. Not all of them should be controlled for — mediators and colliders must be left out.">other variables</td>   <td class="info" id="info_covariates">0</td></tr>
         <tr><td title="Directed paths from exposure to outcome">causal paths</td><td class="info" id="info_frontdoor">0</td></tr>
       </table>
     </div>
@@ -521,9 +538,10 @@ E -&gt; D
     <div class="modal-body">
       <p class="modal-intro">
         Upload a data file to automatically suggest a causal graph using the
-        <strong>PC algorithm</strong> (skeleton + collider orientation) combined with
-        <strong><a href="https://www.jmlr.org/papers/v7/shimizu06a.html" target="_blank" rel="noopener">LiNGAM</a>-inspired</strong>
-        pairwise orientation (non-Gaussianity of residuals).
+        <strong>PC algorithm</strong> (skeleton + collider orientation) followed by
+        <strong><a href="https://www.jmlr.org/papers/v12/shimizu11a.html" target="_blank" rel="noopener">DirectLiNGAM</a></strong>,
+        which estimates a causal ordering of your variables from the non-Gaussianity of the data.
+        The result is always a DAG.
       </p>
 
       <div class="modal-callout">
@@ -580,9 +598,9 @@ E -&gt; D
       <div class="modal-field">
         <label class="modal-label modal-label-inline">
           <input type="checkbox" id="data-use-lingam" checked>
-          Apply <a href="https://www.jmlr.org/papers/v7/shimizu06a.html" target="_blank" rel="noopener" onclick="event.stopPropagation()">LiNGAM</a> orientation to resolve ambiguous edge directions
+          Apply <a href="https://www.jmlr.org/papers/v12/shimizu11a.html" target="_blank" rel="noopener" onclick="event.stopPropagation()">DirectLiNGAM</a> ordering to resolve ambiguous edge directions
           <span class="help-tip"
-            title="Uses residual non-Gaussianity to orient edges left ambiguous by the PC algorithm. Most useful for non-normally distributed variables.">?</span>
+            title="DirectLiNGAM (Shimizu et al. 2011) estimates a single causal ordering of all variables from the non-Gaussianity of the data, then orients every edge the PC algorithm left ambiguous to agree with it. Assumes linear relationships and non-Gaussian noise — of little help if your variables are close to normally distributed.">?</span>
         </label>
       </div>
 
