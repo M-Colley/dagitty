@@ -229,6 +229,32 @@
         });
         document.getElementById('tp-start').addEventListener('click', function () { p.remove(); start(); });
         document.getElementById('tp-later').addEventListener('click', function () { p.remove(); dismiss(); });
+
+        hideWhileModalOpen(p);
+    }
+
+    /**
+     * The prompt is a fixed pill at the bottom of the screen — exactly where the
+     * dialogs put their footer buttons. A first-time visitor who opened
+     * "Generate DAG from data…" straight away could not click Run Analysis,
+     * because the prompt sat on top of it. Get it out of the way whenever a
+     * dialog is open, and bring it back afterwards (without marking it as seen,
+     * since they never answered it).
+     */
+    function hideWhileModalOpen(p) {
+        var modals = document.querySelectorAll('.modal-overlay');
+        if (!modals.length || typeof MutationObserver === 'undefined') return;
+        var sync = function () {
+            var open = Array.prototype.some.call(modals, function (m) {
+                return getComputedStyle(m).display !== 'none';
+            });
+            p.style.display = open ? 'none' : '';
+        };
+        var obs = new MutationObserver(sync);
+        Array.prototype.forEach.call(modals, function (m) {
+            obs.observe(m, { attributes: true, attributeFilter: ['style', 'class'] });
+        });
+        sync();
     }
 
     window.GuidedTour = { start: start, end: end };

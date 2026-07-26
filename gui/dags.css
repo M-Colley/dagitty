@@ -738,7 +738,10 @@ kbd {
   background: rgba(15,23,42,.5);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  z-index: 200;
+  /* Above the first-run tour prompt (8000), which is a fixed pill at the bottom
+     of the screen and would otherwise cover these dialogs' footer buttons.
+     Still below the tour's own backdrop (9000) so the tour can spotlight. */
+  z-index: 8500;
   display: flex;
   align-items: center;
   justify-content: center;
