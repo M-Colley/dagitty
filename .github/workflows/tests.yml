@@ -16,10 +16,12 @@ jobs:
       # The node bundle of the graph library is generated, not committed.
       # Only that target: `make all` would also copy into the R package.
       # jslib has no committed lockfile, so plain `npm install` (its only
-      # dependency is underscore).
+      # dependency is underscore). The touch stops make regenerating the
+      # committed parser with pegjs: a fresh checkout gives the grammar file a
+      # newer mtime than the generated parser.
       - name: Build jslib node bundle
         working-directory: jslib
-        run: npm install --no-audit --no-fund && make dagitty-node.js
+        run: npm install --no-audit --no-fund && touch parser/GraphDotParser.js && make dagitty-node.js
       - name: Run QUnit (library + GUI modules)
         working-directory: test
         run: npm ci && npx qunit
