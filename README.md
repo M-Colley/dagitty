@@ -12,7 +12,18 @@ approachable for people new to causal inference, while keeping all of the origin
 **What's new in the GUI**
 
 - 🎨 Modern, responsive redesign with automatic light/dark mode
-- 🧭 **Interactive guided tutorial** for first-time users (*Help → Interactive tutorial*, and a one-time prompt on first visit)
+- 🧭 **Interactive guided tutorial** for first-time users (*Help → Tour the interface*, and a one-time prompt on first visit)
+- 🛤️ **Paths panel** — lists every path between exposure and outcome, says whether it is causal or biasing
+  and open or blocked, and explains *why* (*“Open because you adjusted for Z, a collider on this path”*);
+  hovering a path highlights it on the canvas
+- 📊 **Test implications against your data** — upload the study data and every implied conditional
+  independence is tested in the browser (partial correlation, Fisher z, Holm-adjusted p-values; the
+  equivalent of `localTests()` in the R package), with a ready-to-paste sentence for the methods statement
+- 📄 **One-file report** — figure, roles, adjustment verdict and minimal sets, diagram check, paths,
+  implications, test results, methods statement, model code and R code in a single HTML file
+  (machine-readable JSON embedded), for supplementary material
+- ⌨️ **Edit as a list** — a keyboard- and screen-reader-operable alternative to the canvas: tables of
+  variables (with roles) and arrows that edit the live diagram
 - 📝 **"Assumptions for your paper"** — a one-click, plain-language statement of the (often untestable) assumptions your diagram requires to read a result as causal, ready to paste into a methods or limitations section
 - 💬 Plain-language analysis output (e.g. *“Your chosen controls block all confounding”* instead of *“Correctly adjusted”*)
 - 🩺 **Diagram check** — names the specific mistake and the variable involved (*“M sits on a causal pathway

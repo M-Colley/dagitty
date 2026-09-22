@@ -167,19 +167,22 @@
          'No control variables needed — the $1 effect of $2 can be estimated without adjustment.'],
         [/No adjustment sets found\./gi,
          'No valid adjustment set exists. The effect may not be identifiable from this diagram.'],
+        // "Biasing path", not "confounding": an open path may be a back-door
+        // path (confounding) or a collider path the user's own adjustment
+        // opened. The Diagram check and Paths panels name the mechanism.
         [/Biasing paths are open\./gi,
-         'Confounding detected — a naive comparison will be biased.'],
+         'A biasing path is open — a naive comparison will be biased.'],
         [/No open biasing paths\./gi,
-         'No confounding detected — no adjustment needed.'],
+         'No biasing path is open — no adjustment needed.'],
         // \b is load-bearing: "Incorrectly adjusted." CONTAINS "correctly
         // adjusted.", so without it this rule fired inside the negative message
         // and turned it into "InYour chosen controls successfully block all
         // confounding." — telling the user their adjustment was fine at exactly
         // the moment it was not.
         [/\bCorrectly adjusted\./gi,
-         'Your chosen controls successfully block all confounding.'],
+         'Your chosen controls block every biasing path.'],
         [/\bIncorrectly adjusted\./gi,
-         'Your chosen controls do NOT fully block confounding.'],
+         'Your chosen controls leave a biasing path open (or open one).'],
         [/No exposure defined\./gi,
          'Mark a variable as exposure first (click it, check "exposure").'],
         [/No outcome defined\./gi,
@@ -550,49 +553,12 @@
             var dl = document.getElementById('btn-download-model');
             if (dl) dl.style.display = 'none';
 
-            var ext = file.name.split('.').pop().toLowerCase();
             var self = this;
-
-            // Pickle: browser can't parse Python binary format
-            if (ext === 'pkl' || ext === 'pickle') {
-                this._setStatus(
-                    'Python pickle files cannot be read in the browser. ' +
-                    'Export to CSV first: df.to_csv("data.csv", index=False)', 'error');
-                return;
-            }
-
-            // Excel: load SheetJS lazily, then convert to CSV
-            if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsb' || ext === 'ods') {
-                this._setStatus('Loading Excel support\u2026', 'running');
-                _loadSheetJS(function (ok) {
-                    if (!ok) { self._setStatus('Failed to load Excel library. Try saving as CSV instead.', 'error'); return; }
-                    var reader = new FileReader();
-                    reader.onload = function (e) {
-                        try {
-                            var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-                            var ws = wb.Sheets[wb.SheetNames[0]];
-                            self._csvText = XLSX.utils.sheet_to_csv(ws);
-                            var rows = self._csvText.trim().split('\n').length - 1;
-                            self._onCsvReady('sheet "' + wb.SheetNames[0] + '"', rows);
-                        } catch (err) {
-                            self._setStatus('Error reading Excel: ' + err.message, 'error');
-                        }
-                    };
-                    reader.readAsArrayBuffer(file);
-                });
-                return;
-            }
-
-            // CSV / TSV / TXT
-            this._setStatus('Reading file\u2026', 'running');
-            var reader = new FileReader();
-            reader.onload = function (e) {
-                self._csvText = e.target.result;
-                var rows = self._csvText.trim().split(/\r?\n/).length - 1;
-                self._onCsvReady(file.name, rows);
-            };
-            reader.onerror = function () { self._setStatus('Could not read file.', 'error'); };
-            reader.readAsText(file);
+            TabularFile.read(file, function (err, res) {
+                if (err) { self._setStatus(err.message, 'error'); return; }
+                self._csvText = res.text;
+                self._onCsvReady(res.label, res.rows);
+            }, function (status) { self._setStatus(status, 'running'); });
         },
 
         _worker: null,
@@ -844,6 +810,59 @@
         document.head.appendChild(s);
     }
 
+    /**
+     * Read a data file (CSV / TSV / TXT / Excel / ODS) into delimited text.
+     * Shared by the discovery dialog and the local-tests tool.
+     *
+     * @param {File}     file
+     * @param {Function} cb(err, {text, label, rows})  label = file or sheet name
+     * @param {Function} [onStatus](message)           progress text for the UI
+     */
+    window.TabularFile = {
+        read: function (file, cb, onStatus) {
+            if (!file) { cb(new Error('No file chosen.')); return; }
+            var ext = (file.name.split('.').pop() || '').toLowerCase();
+            var status = onStatus || function () {};
+
+            if (ext === 'pkl' || ext === 'pickle') {
+                cb(new Error('Python pickle files cannot be read in the browser. ' +
+                    'Export to CSV first: df.to_csv("data.csv", index=False)'));
+                return;
+            }
+
+            if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsb' || ext === 'ods') {
+                status('Loading Excel support…');
+                _loadSheetJS(function (ok) {
+                    if (!ok) { cb(new Error('Failed to load Excel library. Try saving as CSV instead.')); return; }
+                    var reader = new FileReader();
+                    reader.onload = function (e) {
+                        try {
+                            var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                            var ws = wb.Sheets[wb.SheetNames[0]];
+                            var text = XLSX.utils.sheet_to_csv(ws);
+                            cb(null, { text: text, label: 'sheet "' + wb.SheetNames[0] + '"',
+                                       rows: text.trim().split('\n').length - 1 });
+                        } catch (err) {
+                            cb(new Error('Error reading Excel: ' + err.message));
+                        }
+                    };
+                    reader.onerror = function () { cb(new Error('Could not read file.')); };
+                    reader.readAsArrayBuffer(file);
+                });
+                return;
+            }
+
+            status('Reading file…');
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var text = String(e.target.result);
+                cb(null, { text: text, label: file.name, rows: text.trim().split(/\r?\n/).length - 1 });
+            };
+            reader.onerror = function () { cb(new Error('Could not read file.')); };
+            reader.readAsText(file);
+        }
+    };
+
     // ── 8b. Tooltips ──────────────────────────────────────────────────────────
     // The "?" help badges previously relied on the native `title` tooltip, which
     // is slow, unstyled, and unreliable across browsers. Replace it with a small
@@ -984,6 +1003,14 @@
             DAGittyControl.observe('graphchange', function (g) {
                 UndoRedo.push();
                 updateCanvasHint(g);
+            });
+            // Dragging a variable or bending an arrow only fires the layout
+            // event, so those moves were not undoable. It fires once per drag
+            // end; debounce anyway so a flurry of nudges is one undo step.
+            var layoutPush = null;
+            DAGittyControl.observe('graphlayoutchange', function () {
+                if (layoutPush) clearTimeout(layoutPush);
+                layoutPush = setTimeout(function () { layoutPush = null; UndoRedo.push(); }, 400);
             });
         }
 

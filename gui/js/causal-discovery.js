@@ -46,12 +46,22 @@ var CausalDiscovery = (function () {
      *
      * Returns { headers, data, droppedCols, skipped }
      */
-    function parseCSV(text) {
+    var MISSING = { '': 1, 'NA': 1, 'N/A': 1, 'nan': 1, 'NaN': 1, 'NULL': 1, 'null': 1, '.': 1 };
+
+    /** Is this cell a missing-value marker? */
+    function isMissing(cell) { return MISSING[String(cell).trim()] === 1; }
+
+    /**
+     * Split delimited text into a header row and raw string rows. Detects the
+     * separator (tab > semicolon > comma) from the header line and honours
+     * double-quoted fields (with "" as an escaped quote). Shared by parseCSV()
+     * and parseTable().
+     */
+    function tokenise(text) {
         if (!text || !text.trim()) throw new Error('No data provided.');
         var lines = text.trim().split(/\r?\n/);
         if (lines.length < 2) throw new Error('File must have a header row plus at least one data row.');
 
-        // Auto-detect separator: prefer tab, then semicolon, then comma
         var firstLine = lines[0];
         var sep;
         var tabCount   = (firstLine.match(/\t/g)   || []).length;
@@ -65,28 +75,62 @@ var CausalDiscovery = (function () {
             var result = [], cur = '', inQ = false;
             for (var i = 0; i < line.length; i++) {
                 var c = line[i];
-                if (c === '"') { inQ = !inQ; }
-                else if (c === sep && !inQ) { result.push(cur.trim().replace(/^"|"$/g, '')); cur = ''; }
+                if (c === '"') {
+                    if (inQ && line[i + 1] === '"') { cur += '"'; i++; }   // escaped quote
+                    else inQ = !inQ;
+                }
+                else if (c === sep && !inQ) { result.push(cur.trim()); cur = ''; }
                 else { cur += c; }
             }
-            result.push(cur.trim().replace(/^"|"$/g, ''));
+            result.push(cur.trim());
             return result;
         }
 
-        // Parse header row
-        var allHeaders = splitRow(lines[0]).map(function(h){ return h.trim(); });
-        // Remove trailing empty headers
-        while (allHeaders.length && allHeaders[allHeaders.length-1] === '') allHeaders.pop();
-        if (allHeaders.length < 2) throw new Error('Need at least 2 columns.');
+        var headers = splitRow(lines[0]).map(function (h) { return h.trim(); });
+        while (headers.length && headers[headers.length - 1] === '') headers.pop();
+        if (headers.length < 2) throw new Error('Need at least 2 columns.');
 
-        var p = allHeaders.length;
-
-        // Parse all data rows as raw strings first
         var rawRows = [];
         for (var i = 1; i < lines.length; i++) {
             if (!lines[i].trim()) continue;
             rawRows.push(splitRow(lines[i]));
         }
+        return { headers: headers, rawRows: rawRows, sep: sep };
+    }
+
+    /**
+     * Lenient numeric table for the local-tests tool: every column that is at
+     * least 80 % numeric among its non-missing cells is kept, missing or
+     * non-numeric cells become NaN, and NO rows are dropped — each test later
+     * uses the rows complete for ITS variables, as R's localTests() does.
+     *
+     * @returns {{ headers: string[], columns: Object<string, number[]>, nRows: number, dropped: string[] }}
+     */
+    function parseTable(text) {
+        var tok = tokenise(text), headers = tok.headers, rawRows = tok.rawRows;
+        if (rawRows.length < 3) throw new Error('Need at least 3 data rows (got ' + rawRows.length + ').');
+        var columns = {}, kept = [], dropped = [];
+        headers.forEach(function (h, c) {
+            var vals = new Array(rawRows.length), numeric = 0, nonEmpty = 0;
+            for (var r = 0; r < rawRows.length; r++) {
+                var cell = (rawRows[r][c] || '').trim();
+                if (isMissing(cell)) { vals[r] = NaN; continue; }
+                nonEmpty++;
+                var v = parseFloat(cell);
+                if (isFinite(v) && /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(cell)) { vals[r] = v; numeric++; }
+                else vals[r] = NaN;
+            }
+            if (h === '' || nonEmpty === 0 || numeric / nonEmpty < 0.8) { if (h !== '') dropped.push(h); return; }
+            columns[h] = vals;
+            kept.push(h);
+        });
+        return { headers: kept, columns: columns, nRows: rawRows.length, dropped: dropped };
+    }
+
+    function parseCSV(text) {
+        var tok = tokenise(text);
+        var allHeaders = tok.headers, rawRows = tok.rawRows;
+        var p = allHeaders.length;
         if (rawRows.length < 3) throw new Error('Need at least 3 data rows (got ' + rawRows.length + ').');
 
         // Determine which columns are numeric:
@@ -287,12 +331,22 @@ var CausalDiscovery = (function () {
 
     // ── Statistical test ──────────────────────────────────────────────────────
 
-    /** Approximate normal CDF via erf polynomial (Abramowitz & Stegun 7.1.26). */
+    /**
+     * Standard normal CDF, Φ(x) = ½(1 + erf(x/√2)), with erf from the
+     * Abramowitz & Stegun 7.1.26 polynomial (|error| < 1.5e-7).
+     *
+     * The /√2 was missing until 2026-09-22, so this returned ½(1 + erf(x)):
+     * Φ(1.96) came out as 0.9972 instead of 0.975 and every Fisher-z p-value
+     * was far too small. In the PC skeleton search that meant an edge was only
+     * dropped when |z| < 1.39 rather than 1.96 — an effective α of about 0.17
+     * whenever the user asked for 0.05 — so discovered graphs were too dense.
+     */
     function normalCDF(x) {
-        var t = 1 / (1 + 0.3275911 * Math.abs(x));
+        var a = Math.abs(x) / Math.SQRT2;
+        var t = 1 / (1 + 0.3275911 * a);
         var p = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-        var v = 1 - p * Math.exp(-x * x);
-        return x >= 0 ? 0.5 * (1 + v) : 0.5 * (1 - v);
+        var erf = 1 - p * Math.exp(-a * a);
+        return x >= 0 ? 0.5 * (1 + erf) : 0.5 * (1 - erf);
     }
 
     /**
@@ -1160,15 +1214,22 @@ var CausalDiscovery = (function () {
     // Public API
     return {
         parseCSV:             parseCSV,
+        parseTable:           parseTable,
+        isMissing:            isMissing,
         pcAlgorithm:          pcAlgorithm,
         pcAlgorithmAsync:     pcAlgorithmAsync,
         applyLiNGAM:          applyLiNGAM,
         directLingamOrder:    directLingamOrder,
+        enforceAcyclic:       enforceAcyclic,
         entropyApprox:        entropyApprox,
         discoverFromCSV:      discoverFromCSV,
         discoverFromCSVAsync: discoverFromCSVAsync,
         correlationMatrix:    correlationMatrix,
-        pearsonR:             pearsonR
+        pearsonR:             pearsonR,
+        partialCorr:          partialCorr,
+        invertMatrix:         invertMatrix,
+        fisherZPVal:          fisherZPVal,
+        normalCDF:            normalCDF
     };
 
 })();

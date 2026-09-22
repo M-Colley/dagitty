@@ -30,13 +30,13 @@
 
   <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
        keep running the previously cached copy of these scripts after an update. -->
-  <script src="js/dagitty.js?v=2026-09-22"></script>
-  <script src="js/example-dags.js?v=2026-09-22"></script>
+  <script src="js/dagitty.js?v=2026-09-22.3"></script>
+  <script src="js/example-dags.js?v=2026-09-22.3"></script>
   <script src="js/styles/semlike.js"></script>
   <script src="js/styles/original.js"></script>
-  <script src="js/main.js?v=2026-09-22"></script>
+  <script src="js/main.js?v=2026-09-22.3"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js?v=2026-09-22"></script>
+  <script src="js/causal-discovery.js?v=2026-09-22.3"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -100,14 +100,18 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js?v=2026-09-22"></script>
-  <script src="js/methods-export.js?v=2026-09-22"></script>
-  <script src="js/publication-export.js?v=2026-09-22"></script>
-  <script src="js/dag-wizard.js?v=2026-09-22"></script>
-  <script src="js/guided-tour.js?v=2026-09-22"></script>
-  <script src="js/diagram-check.js?v=2026-09-22"></script>
+  <script src="js/ui-enhancements.js?v=2026-09-22.3"></script>
+  <script src="js/methods-export.js?v=2026-09-22.3"></script>
+  <script src="js/publication-export.js?v=2026-09-22.3"></script>
+  <script src="js/dag-wizard.js?v=2026-09-22.3"></script>
+  <script src="js/guided-tour.js?v=2026-09-22.3"></script>
+  <script src="js/diagram-check.js?v=2026-09-22.3"></script>
+  <script src="js/paths-panel.js?v=2026-09-22.3"></script>
+  <script src="js/local-tests.js?v=2026-09-22.3"></script>
+  <script src="js/report-export.js?v=2026-09-22.3"></script>
+  <script src="js/structured-editor.js?v=2026-09-22.3"></script>
   <!-- workspace.js restores saved/shared models, so it must run last -->
-  <script src="js/workspace.js?v=2026-09-22"></script>
+  <script src="js/workspace.js?v=2026-09-22.3"></script>
 </head>
 
 <body>
@@ -133,6 +137,7 @@
       <a href="javascript:void(0)" id="menu_model_title" role="menuitem" aria-haspopup="true">Model</a>
       <ul id="menu_model" style="z-index:50" role="menu">
         <li><a href="#" onclick="newModel();displayHide('menu_model')">New model</a></li>
+        <li><a href="#" onclick="StructuredEditor.open();displayHide('menu_model')">Edit as a list (no mouse needed)…</a></li>
         <li><a href="#" onclick="Workspace.openFile();displayHide('menu_model')">Open model file…</a></li>
         <li><a href="#" onclick="loadOnlineForm();displayHide('menu_model')">Load from dagitty.net</a></li>
         <li class="menu-sep"></li>
@@ -141,6 +146,8 @@
         <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Generate DAG from data…</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="PubExport.open();displayHide('menu_model')"><strong>Publication figure…</strong> <span style="opacity:.6">(SVG · PNG · PDF)</span></a></li>
+        <li><a href="#" onclick="ReportExport.downloadHTML();displayHide('menu_model')"><strong>Export report</strong> <span style="opacity:.6">(one HTML file: figure, analysis, methods text)</span></a></li>
+        <li><a href="#" onclick="ReportExport.downloadJSON();displayHide('menu_model')">Export analysis as JSON</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="exportPNG();displayHide('menu_model')">Quick export — PNG</a></li>
         <li><a href="#" onclick="exportJPEG();displayHide('menu_model')">Quick export — JPEG</a></li>
@@ -166,6 +173,7 @@
       <a href="javascript:void(0)" id="menu_howto_title" role="menuitem" aria-haspopup="true">How to…</a>
       <ul id="menu_howto" style="z-index:50" role="menu">
         <li><a href="#" onclick="how('Click or tap on an empty area of the canvas to add a new variable.')">Add a variable</a></li>
+        <li><a href="#" onclick="how('Model → Edit as a list opens two tables — variables with their roles, and arrows — that you can edit entirely from the keyboard. Every change appears on the canvas immediately.')">Edit without the mouse</a></li>
         <li><a href="#" onclick="how('Click a variable, then use the Rename button in the Variable panel — or hover and press R.')">Rename a variable</a></li>
         <li><a href="#" onclick="how('Click the start variable, then click the end variable to draw an arrow. Clicking the same pair again removes the arrow.')">Add / remove an arrow</a></li>
         <li><a href="#" onclick="how('Click a variable to select it, then press Delete in the Variable panel — or hover and press D.')">Delete a variable</a></li>
@@ -225,9 +233,10 @@
   </ul>
 
   <!-- ═══ Canvas ════════════════════════════════════════════════════════════ -->
-  <div id="canvas" class="dagitty" data-mutable="true"
-       title="Click to add variables · Click two variables to connect/disconnect · Drag to reposition">
-A [selected,pos="-2.200,-1.520"]
+  <!-- No native title here: it popped up wherever the mouse rested on the drawing.
+       The empty-canvas hint, Quick Start and the tour carry the instructions. -->
+  <div id="canvas" class="dagitty" data-mutable="true">
+A [pos="-2.200,-1.520"]
 B [pos="1.400,-1.460"]
 D [outcome,pos="1.400,1.621"]
 E [exposure,pos="-2.200,1.597"]
@@ -256,7 +265,7 @@ E -&gt; D
     <div id="quickstart" style="display:none">
       <div class="qs-card">
         <button type="button" class="qs-wizard-btn" onclick="DagWizard.start()">✨ Build a DAG step-by-step</button>
-        <p class="qs-or">or do it yourself:</p>
+        <p class="qs-or">or <a href="#" onclick="StructuredEditor.open();return false">edit the diagram as a list</a> (keyboard only), or do it yourself:</p>
         <ol>
           <li><strong>Click the canvas</strong> to add a variable (node).</li>
           <li><strong>Click one variable, then another</strong> to draw an arrow.</li>
@@ -461,14 +470,30 @@ E -&gt; D
       <div id="causal_effect"></div>
     </div>
 
+    <!-- Paths -->
+    <h3 onclick="displayToggle('paths_panel')">
+      <span class="chev" id="a_paths_panel" data-open="1"></span>
+      Paths
+      <span id="paths_count" class="dcheck-count" style="display:none" aria-label="open biasing paths"></span>
+      <span class="help-tip" style="margin-left:auto;flex-shrink:0"
+        title="Every route between exposure and outcome, and why each one is open or blocked given what you adjust for. Causal paths carry the effect; biasing paths must all be blocked.">?</span>
+    </h3>
+    <div id="paths_panel"></div>
+
     <!-- Testable implications -->
-    <h3 onclick="displayToggle('testable_implications')">
-      <span class="chev" id="a_testable_implications" data-open="1"></span>
+    <h3 onclick="displayToggle('testable_implications_block')">
+      <span class="chev" id="a_testable_implications_block" data-open="1"></span>
       Testable implications
       <span class="help-tip" style="margin-left:auto;flex-shrink:0"
         title="Conditional independencies your DAG predicts. If violated in your data, the model may be mis-specified.">?</span>
     </h3>
-    <div id="testable_implications"></div>
+    <div id="testable_implications_block">
+      <div id="testable_implications"></div>
+      <div class="model-code-actions">
+        <button type="button" id="btn-local-tests" onclick="LocalTests.open()"
+          title="Upload your data and test every implied independence in the browser">Test against my data…</button>
+      </div>
+    </div>
 
     <!-- Assumptions for your paper -->
     <h3 onclick="displayToggle('methods_block')">

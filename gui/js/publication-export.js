@@ -526,9 +526,30 @@
         catch (e) { setStatus('Could not render preview: ' + e.message, 'error'); }
     }
 
+    /**
+     * Serialised SVG of the current model using the dialog's current settings,
+     * rendered off-screen (getBBox needs a live element). Used by the report
+     * export; returns '' if there is nothing to draw.
+     */
+    function svgMarkup(overrides) {
+        if (!window.Model || !Model.dag) return '';
+        var host = document.createElement('div');
+        host.style.cssText = 'position:absolute;left:-10000px;top:0;width:900px;height:700px;visibility:hidden';
+        document.body.appendChild(host);
+        try {
+            var o = opts();
+            if (overrides) for (var k in overrides) if (overrides.hasOwnProperty(k)) o[k] = overrides[k];
+            var svg = build(host, Model.dag, o);
+            return svg ? serialized(svg) : '';
+        } finally {
+            document.body.removeChild(host);
+        }
+    }
+
     window.PubExport = {
         open: open, close: close, refresh: refresh,
-        downloadSVG: downloadSVG, downloadPNG: downloadPNG, printPDF: printPDF
+        downloadSVG: downloadSVG, downloadPNG: downloadPNG, printPDF: printPDF,
+        svgMarkup: svgMarkup
     };
 
 })();

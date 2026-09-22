@@ -1,0 +1,23 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  qunit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # The node bundle of the graph library is generated, not committed.
+      # Only that target: `make all` would also copy into the R package.
+      - name: Build jslib node bundle
+        working-directory: jslib
+        run: npm ci && make dagitty-node.js
+      - name: Run QUnit (library + GUI modules)
+        working-directory: test
+        run: npm ci && npx qunit

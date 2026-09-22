@@ -14,6 +14,14 @@
 
     function ids(verts) { return _.pluck(verts, 'id').sort(); }
 
+    var IMPLICATION_CAP = 200;
+
+    // Sentence(s) describing the outcome of testing the implications against
+    // data, set by LocalTests (local-tests.js) and cleared when the model
+    // changes in a way that invalidates them. Null → the placeholder is shown.
+    var _localTestResults = null;
+    var _localTestCode = null;   // model code the results belong to
+
     function list(arr) {
         // "A", "A and B", "A, B and C"
         if (arr.length === 0) return '';
@@ -178,21 +186,31 @@
                 'and that any resulting selection bias is addressed by the adjustment described above.');
         }
 
-        // 4. Testable implications
+        // 4. Testable implications. Enumerating every minimal implication is the
+        //    most expensive analysis on the page and this runs on every edit, so
+        //    stop counting at IMPLICATION_CAP and say "at least".
         if (!cyclic) {
-            var imps = GraphAnalyzer.listMinimalImplications(g);
+            var imps = GraphAnalyzer.listMinimalImplications(g, IMPLICATION_CAP);
             var count = 0;
             imps.forEach(function (t) { count += t[2].length; });
             if (count > 0) {
                 var first = imps[0];
                 var ex = first[0] + ' ⊥ ' + first[1] +
                     (first[2][0].length ? ' | ' + ids(first[2][0]).join(', ') : '');
-                lines.push('The model implies ' + count + ' testable conditional independenc' +
-                    (count !== 1 ? 'ies' : 'y') + ' (for example, ' + ex + '). ' +
-                    'We tested ' + (count !== 1 ? 'these implications' : 'this implication') +
-                    ' against our data using localTests() from the dagitty R package. ' +
-                    '[REPORT RESULTS HERE: state which implied independencies held and which were violated — ' +
-                    'e.g. the largest absolute test statistic and its p-value, or the proportion consistent with the data.]');
+                var countText = (count >= IMPLICATION_CAP ? 'at least ' : '') + count;
+                var s = 'The model implies ' + countText + ' testable conditional independenc' +
+                    (count !== 1 ? 'ies' : 'y') + ' (for example, ' + ex + '). ';
+                if (_localTestResults) {
+                    // Filled in by the in-browser "Test against my data" tool.
+                    s += _localTestResults;
+                } else {
+                    s += 'We tested ' + (count !== 1 ? 'these implications' : 'this implication') +
+                        ' against our data using localTests() from the dagitty R package' +
+                        ' (or DAGitty\'s in-browser test: Testable implications → Test against my data). ' +
+                        '[REPORT RESULTS HERE: state which implied independencies held and which were violated — ' +
+                        'e.g. the largest absolute test statistic and its p-value, or the proportion consistent with the data.]';
+                }
+                lines.push(s);
             }
         }
 
@@ -240,7 +258,19 @@
     function refresh() {
         var ta = document.getElementById('methods_text');
         if (!ta) return;
+        // Results were computed for one particular diagram; drop them silently
+        // if the diagram has since changed (they would describe a different model).
+        if (_localTestResults && window.Model && Model.dag && Model.dag.toString() !== _localTestCode) {
+            _localTestResults = null; _localTestCode = null;
+        }
         ta.value = generate();
+    }
+
+    /** Called by LocalTests with a ready-to-paste sentence, or null to clear. */
+    function setLocalTestResults(text) {
+        _localTestResults = text || null;
+        _localTestCode = (text && window.Model && Model.dag) ? Model.dag.toString() : null;
+        refresh();
     }
 
     function copyText() {
@@ -274,7 +304,8 @@
         _refreshTimer = setTimeout(function () { _refreshTimer = null; refresh(); }, 200);
     }
 
-    window.MethodsExport = { refresh: refresh, copy: copyText, generate: generate };
+    window.MethodsExport = { refresh: refresh, copy: copyText, generate: generate,
+                             setLocalTestResults: setLocalTestResults };
 
     window.addEventListener('load', function () {
         if (window.DAGittyControl) {
