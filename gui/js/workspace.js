@@ -61,7 +61,7 @@
             return false;
         }
         var ta = document.getElementById('adj_matrix');
-        if (ta) { ta.value = code; ta.style.backgroundColor = ''; }
+        if (ta) { ta.value = code; ta.style.backgroundColor = ''; ta.classList.remove('dirty'); }
         displayHide('model_refresh');
         if (!g.hasCompleteLayout()) new GraphLayouter.Spring(g).layout();
         DAGittyControl.setGraph(g);
@@ -125,6 +125,7 @@
         };
         // Reflect it in the address bar either way, so a failed copy is recoverable.
         _lastHash = '#dag=' + encodeModel(code);
+        _hashCode = code;
         try { history.replaceState(null, '', url); } catch (e) {}
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url).then(function () { done(true); }, function () { done(false); });
@@ -185,6 +186,21 @@
 
     var _lastHash = null;
 
+    // The model the "#dag=…" fragment in the address bar currently stands for,
+    // or null if there is none. A fragment is only truthful while the diagram
+    // still matches it: once the user edits, keeping it around meant a reload
+    // (or a bookmark) silently reopened the OLD linked version and skipped the
+    // autosave of everything done since — which looked exactly like lost work.
+    var _hashCode = null;
+
+    function syncHash(code) {
+        if (_hashCode === null || code === _hashCode) return;
+        _hashCode = null;
+        _lastHash = null;
+        if (!/^#dag=/.test(location.hash)) return;
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    }
+
     /** Load the model in #dag=… if there is one. Returns true if it handled it. */
     function loadFromHash() {
         var m = /#dag=([A-Za-z0-9\-_]+)/.exec(location.hash);
@@ -194,7 +210,11 @@
         try { code = decodeModel(m[1]); }
         catch (e) { toast('That shared link is damaged and could not be opened.', 'error'); return true; }
         var ok = loadCode(code, 'the shared link');
-        if (ok) { resetBaseline(); toast('Opened the diagram from the shared link.', 'ok'); }
+        if (ok) {
+            resetBaseline();
+            _hashCode = Model.dag.toString();     // normalised form, as later edits will be compared
+            toast('Opened the diagram from the shared link.', 'ok');
+        }
         return true;
     }
 
@@ -326,7 +346,10 @@
         initDragDrop();
         if (_baseline === null) resetBaseline();   // the built-in example, unless…
         maybeRestore();                            // …a link or saved session replaces it
-        if (window.DAGittyControl) DAGittyControl.observe('graphchange', autosave);
+        if (window.DAGittyControl) DAGittyControl.observe('graphchange', function (g) {
+            syncHash(g.toString());
+            autosave();
+        });
 
         // Pasting a share link into a tab that already has DAGitty open only
         // changes the fragment — the browser does not reload, so nothing would

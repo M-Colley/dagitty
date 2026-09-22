@@ -275,6 +275,7 @@ h3 {
 
 h3:first-child { border-top: none; }
 h3:hover { color: var(--text); }
+h3:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; color: var(--text); }
 
 /* Chevron */
 .chev {
@@ -475,6 +476,23 @@ textarea:focus {
 }
 
 #causal_effect p { margin-bottom: .3em; }
+
+/* What the minimal sets are WITHOUT the user's current adjustments — shown
+   whenever their choice is not itself minimal. */
+.adj-alt {
+  margin: .45em 0 .2em;
+  padding: .45em .6em .4em;
+  border-left: 3px solid var(--primary);
+  background: var(--primary-bg);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.adj-alt p { margin: 0 0 .2em; }
+.adj-alt ul { margin: 0; padding-left: 1.1em; }
+
+/* Model-code box after the user has typed into it and not yet clicked Update */
+#adj_matrix.dirty { background: #fffbeb; border-color: var(--warn-border); }
 
 #testable_implications {
   padding: .15em .75em .4em;
@@ -1212,10 +1230,7 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
 [data-theme="dark"] #canvas svg text.nodelabel { fill: #e2e8f0; }
 [data-theme="dark"] textarea { background: #1e293b; color: var(--text); }
 [data-theme="dark"] textarea:focus { background: #162032; }
-/* main.js sets an inline white background on the model-code box (on load and as
-   an "edited" highlight). That inline style would otherwise leave light text on
-   white in dark mode — force a readable dark background. */
-[data-theme="dark"] #adj_matrix { background-color: #1e293b !important; color: var(--text) !important; }
+[data-theme="dark"] #adj_matrix.dirty { background: #1c1400; }
 [data-theme="dark"] select { background: #1e293b; color: var(--text); }
 [data-theme="dark"] #menu li ul { background: #0f172a; border-color: var(--border); }
 [data-theme="dark"] #menu li ul li a { color: var(--text-2); }

@@ -30,13 +30,13 @@
 
   <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
        keep running the previously cached copy of these scripts after an update. -->
-  <script src="js/dagitty.js?v=2026-07-26"></script>
-  <script src="js/example-dags.js?v=2026-07-26"></script>
+  <script src="js/dagitty.js?v=2026-09-22"></script>
+  <script src="js/example-dags.js?v=2026-09-22"></script>
   <script src="js/styles/semlike.js"></script>
   <script src="js/styles/original.js"></script>
-  <script src="js/main.js?v=2026-07-26"></script>
+  <script src="js/main.js?v=2026-09-22"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js?v=2026-07-26"></script>
+  <script src="js/causal-discovery.js?v=2026-09-22"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -100,14 +100,14 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js?v=2026-07-26"></script>
-  <script src="js/methods-export.js?v=2026-07-26"></script>
-  <script src="js/publication-export.js?v=2026-07-26"></script>
-  <script src="js/dag-wizard.js?v=2026-07-26"></script>
-  <script src="js/guided-tour.js?v=2026-07-26"></script>
-  <script src="js/diagram-check.js?v=2026-07-26"></script>
+  <script src="js/ui-enhancements.js?v=2026-09-22"></script>
+  <script src="js/methods-export.js?v=2026-09-22"></script>
+  <script src="js/publication-export.js?v=2026-09-22"></script>
+  <script src="js/dag-wizard.js?v=2026-09-22"></script>
+  <script src="js/guided-tour.js?v=2026-09-22"></script>
+  <script src="js/diagram-check.js?v=2026-09-22"></script>
   <!-- workspace.js restores saved/shared models, so it must run last -->
-  <script src="js/workspace.js?v=2026-07-26"></script>
+  <script src="js/workspace.js?v=2026-09-22"></script>
 </head>
 
 <body>
@@ -493,8 +493,12 @@ E -&gt; D
     <div id="model_data">
       <p class="rlegend-hint">Copy to save · paste back and click <em>Update</em> to reload.</p>
       <form name="model_data_frm" style="padding:0 .75em .2em">
+        <!-- "edited" state: compare with the live model, so merely moving the
+             caret (arrow keys) no longer flags the code as changed, and undoing
+             back to the original clears the flag again. Colour comes from the
+             .dirty rule in dags.css, which has a dark-theme variant. -->
         <textarea rows="9" name="adj_matrix" id="adj_matrix"
-          onkeydown="if(this.value!=Model.dag_model_text_data){displayShow('model_refresh');this.style.backgroundColor='#fffbeb';}"></textarea>
+          oninput="var same=(Model.dag&&this.value==Model.dag.toString());(same?displayHide:displayShow)('model_refresh');this.classList.toggle('dirty',!same);"></textarea>
       </form>
       <div class="model-code-actions">
         <button type="button" onclick="loadDAGFromTextData()">Update</button>

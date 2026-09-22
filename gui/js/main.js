@@ -144,14 +144,23 @@ function displayHide( id ){
 	displayArrow( id, false );
 }
 function displayToggle( id ){
-	var on = true;
-	if( document.getElementById(id).style.display == "block" ){
-		document.getElementById(id).style.display = "none";
-		on = false;
-	} else {
-		document.getElementById(id).style.display = "block";
+	var e = document.getElementById(id);
+	if( !e ){
+		return;
 	}
-	displayArrow( id, on );
+	/* Decide from what is actually on screen. Several panels start out visible
+	   without an inline display style, and testing style.display == "block"
+	   treated those as hidden: the first click on their header "showed" them
+	   (no visible change) and only the second click collapsed them. */
+	var visible = e.style.display
+		? e.style.display != "none"
+		: getComputedStyle( e ).display != "none";
+	if( visible ){
+		e.style.display = "none";
+	} else {
+		e.style.display = ( e.tagName == "SPAN" ) ? "inline" : "block";
+	}
+	displayArrow( id, !visible );
 }
 
 function menuOpen( id ){
@@ -323,13 +332,13 @@ function displayAdjustmentInfo( kind ){
 	tgt_el.replaceChildren()
 
 	if( exposures_list.length > 0 ){
-		tgt_el.appendChild( msgP( "Exposure"+(exposures.length > 1?"s: ":": ")+exposures_list.join(",") ) )
+		tgt_el.appendChild( msgP( "Exposure"+(exposures.length > 1?"s: ":": ")+exposures_list.join(", ") ) )
 	} else {
 		tgt_el.appendChild( msgWarnP( "No exposure defined." ) )
 	}
 
 	if( outcomes_list.length > 0 ){
-		tgt_el.appendChild( msgP( "Outcome"+(outcomes.length > 1?"s: ":": ")+outcomes_list.join(",") ) ) 
+		tgt_el.appendChild( msgP( "Outcome"+(outcomes.length > 1?"s: ":": ")+outcomes_list.join(", ") ) )
 	} else {
 		tgt_el.appendChild( msgWarnP( "No outcome defined." ) )
 	}
@@ -339,8 +348,11 @@ function displayAdjustmentInfo( kind ){
 		return
 	}
 
-	/* For non-total effects, we need exactly one exposure and/or outcome. */
-	if( kind == "causal odds ratio" ){
+	/* The causal odds ratio needs exactly one exposure and one outcome
+	   (isAdjustmentSetCausalOddsRatio returns null otherwise, which used to be
+	   reported as "Incorrectly adjusted"). The value passed here is "causalodds";
+	   this test previously compared against "causal odds ratio" and never ran. */
+	if( kind == "causalodds" && ( exposures.length > 1 || outcomes.length > 1 ) ){
 		if( exposures.length > 1 ){
 			tgt_el.appendChild( msgWarnP( "Multiple exposures defined." ) )		
 		}
@@ -352,7 +364,7 @@ function displayAdjustmentInfo( kind ){
 
 	if( selected.length > 0 ){
 		let selected_el = document.createElement( "p" )
-		selected_el.innerText = "Selected: "+selected.join(",")
+		selected_el.innerText = "Selected: "+selected.join(", ")
 		tgt_el.appendChild( selected_el )
 		if( kind == "direct" ){
 			tgt_el.appendChild( msgWarnP("Selection nodes not supported for direct effects." ) )
@@ -373,7 +385,7 @@ function displayAdjustmentInfo( kind ){
 
 	if( adjusted.length > 0 ){
 		let adjusted_el = document.createElement( "p" )
-		adjusted_el.innerText = "Adjusted: "+adjusted.join(",")
+		adjusted_el.innerText = "Adjusted: "+adjusted.join(", ")
 		tgt_el.appendChild( adjusted_el )
 	}
 
@@ -417,15 +429,15 @@ function displayAdjustmentInfo( kind ){
 	let showMsas = function( t, msas, note_a, el ){
 		if( msas.length == 1 && msas[0].length == 0 ){
 			el.innerText = "No adjustment is necessary to estimate the "+t+" of "+
-					_.pluck(Model.dag.getSources(),'id').join(",") +
-					" on " + _.pluck(Model.dag.getTargets(),'id').join(",") + ".";
+					_.pluck(Model.dag.getSources(),'id').join(", ") +
+					" on " + _.pluck(Model.dag.getTargets(),'id').join(", ") + ".";
 			return
 		}
 		let msas_html = msasToHtml( msas );
 		if( msas_html ){
 			el.innerText = "Minimal sufficient adjustment sets "+note_a+" for estimating the "+t+" of "
-				+ _.pluck(Model.dag.getSources(),'id').join(",") 
-				+ " on " + _.pluck(Model.dag.getTargets(),'id').join(",") + ": "
+				+ _.pluck(Model.dag.getSources(),'id').join(", ")
+				+ " on " + _.pluck(Model.dag.getTargets(),'id').join(", ") + ": "
 			el.after( msas_html )
 		} else {
 			el.innerText = "No adjustment sets found.";
@@ -637,7 +649,7 @@ function displayGeneralInfo(){
 		if (cycle) {
 			displayShow("info_cycle");
 			displayHide("info_summary");
-			document.getElementById("info_cycle").innerHTML = "<p class=\"warning\">Model contains semi-cycle: "+cycle+"</b></p>";
+			document.getElementById("info_cycle").innerHTML = "<p class=\"warning\">Model contains semi-cycle: "+cycle+"</p>";
 		} else {
 			displayHide("info_cycle");
 			displayShow("info_summary");
@@ -661,7 +673,9 @@ function loadDAGFromTextData(){
 	}
 	DAGittyControl.setGraph( Model.dag  );
 	displayHide("model_refresh");
-	document.getElementById("adj_matrix").style.backgroundColor="#fff";
+	var ta = document.getElementById("adj_matrix");
+	ta.style.backgroundColor = "";   // the theme's stylesheet owns the colour
+	ta.classList.remove("dirty");
 }
 
 function generateSpringLayout(){

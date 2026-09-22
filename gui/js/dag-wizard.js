@@ -59,6 +59,7 @@
                     'value="' + esc(state.exposure) + '" autocomplete="off"></label>';
             },
             focus: 'wiz-exposure',
+            enterAdvances: true,
             valid: function () { return clean(root.querySelector('#wiz-exposure').value).length > 0; },
             onLeave: function () { state.exposure = clean(root.querySelector('#wiz-exposure').value); }
         },
@@ -74,6 +75,7 @@
                     'value="' + esc(state.outcome) + '" autocomplete="off"></label>';
             },
             focus: 'wiz-outcome',
+            enterAdvances: true,
             valid: function () {
                 var o = clean(root.querySelector('#wiz-outcome').value);
                 return o.length > 0 && o !== state.exposure;
@@ -351,7 +353,14 @@
 
         if (step.focus) {
             var f = root.querySelector('#' + step.focus);
-            if (f) setTimeout(function () { f.focus(); }, 30);
+            if (f) {
+                setTimeout(function () { f.focus(); }, 30);
+                // Type a name, press Enter, move on — the natural rhythm for a
+                // single-field step. (The variables step wires Enter to "Add".)
+                if (step.enterAdvances) f.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') { e.preventDefault(); next(); }
+                });
+            }
         }
     }
 

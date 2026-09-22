@@ -65,7 +65,7 @@
 
     function _loadCodeIntoCanvas(code) {
         var ta = document.getElementById('adj_matrix');
-        if (ta) { ta.value = code; ta.style.backgroundColor = ''; }
+        if (ta) { ta.value = code; ta.style.backgroundColor = ''; ta.classList.remove('dirty'); }
         displayHide('model_refresh');
         var g = GraphParser.parseGuess(code);
         if (!g.hasCompleteLayout()) {
@@ -80,11 +80,89 @@
     var _origDisplayAdjustmentInfo = null;
     var _origDisplayImplicationInfo = null;
 
+    // ── 2a. What SHOULD be adjusted for? ──────────────────────────────────────
+    // GraphAnalyzer.listMsas*Effect() treats every node already marked
+    // "adjusted" as mandatory: it lists only the sufficient sets that CONTAIN
+    // them, and returns nothing at all if one of them may not be adjusted for
+    // (a mediator, say). The upstream panel is careful to say "sets containing
+    // Z", but any paraphrase that drops that qualifier — as the plain-language
+    // rules below did, and as the methods statement did — turns "no set
+    // containing your mediator exists" into "the effect is not identifiable",
+    // which is simply false. So compute the unconstrained answer on a copy of
+    // the graph with the current adjustments cleared, and show both.
+    window.AdjustmentSets = {
+        /** Minimal sufficient sets ignoring the user's current adjustments, as
+         *  sorted arrays of ids; [] = none exists; [[]] = nothing needed;
+         *  null = not applicable (no exposure/outcome, unsupported graph). */
+        minimal: function (g, kind) {
+            if (!g || !g.getSources().length || !g.getTargets().length) return null;
+            var h = g.clone();
+            h.getAdjustedNodes().slice().forEach(function (v) { h.removeAdjustedNode(v); });
+            try {
+                var sets = kind === 'direct' ? GraphAnalyzer.listMsasDirectEffect(h)
+                                             : GraphAnalyzer.listMsasTotalEffect(h);
+                return sets.map(function (s) { return _.pluck(s, 'id').sort(); });
+            } catch (e) { return null; }
+        },
+        /** Is the user's current adjustment set exactly one of `sets`? */
+        isOneOf: function (g, sets) {
+            var cur = _.pluck(g.getAdjustedNodes(), 'id').sort();
+            return (sets || []).some(function (s) {
+                return s.length === cur.length && s.every(function (x, i) { return x === cur[i]; });
+            });
+        }
+    };
+
+    function _setsList(sets) {
+        var ul = document.createElement('ul');
+        sets.slice().sort().forEach(function (s) {
+            var li = document.createElement('li');
+            li.textContent = s.join(', ');
+            ul.appendChild(li);
+        });
+        return ul;
+    }
+
+    /** Extra paragraph for the causal-effect panel when the user has adjusted
+     *  for something: what the minimal sets are WITHOUT that constraint. */
+    function _unconstrainedNote(g, kind) {
+        var adjusted = _.pluck(g.getAdjustedNodes(), 'id').sort();
+        if (!adjusted.length || g.getSelectedNodes().length) return null;
+        var sets = AdjustmentSets.minimal(g, kind);
+        if (!sets) return null;
+        var label = kind + ' effect';
+        var sufficient = kind === 'direct' ? GraphAnalyzer.isAdjustmentSetDirectEffect(g)
+                                           : GraphAnalyzer.isAdjustmentSet(g);
+        var wrap = document.createElement('div');
+        wrap.className = 'adj-alt';
+        var p = document.createElement('p');
+        wrap.appendChild(p);
+        if (!sets.length) {
+            p.textContent = 'No choice of controls identifies the ' + label + ' in this diagram — ' +
+                'adjustment alone cannot recover it.';
+        } else if (sets.length === 1 && sets[0].length === 0) {
+            p.textContent = (sufficient ? 'None of these controls is actually needed: '
+                                        : 'Remove ' + (adjusted.length > 1 ? 'these controls' : 'this control') + ' instead: ') +
+                'the ' + label + ' can be estimated without any adjustment.';
+        } else if (AdjustmentSets.isOneOf(g, sets)) {
+            return null;                          // already minimal — nothing to add
+        } else {
+            p.textContent = sufficient
+                ? 'A smaller set would also do. Ignoring your current choice, the minimal sufficient sets are:'
+                : 'Sets that would work instead (ignoring your current choice):';
+            wrap.appendChild(_setsList(sets));
+        }
+        return wrap;
+    }
+
     var PLAIN = [
-        [/Minimal sufficient adjustment sets[^:]*for estimating the total effect of ([^:]+):/gi,
-         'To estimate the total effect of $1, control for:'],
-        [/Minimal sufficient adjustment sets[^:]*for estimating the direct effect of ([^:]+):/gi,
-         'To estimate the direct effect of $1, control for:'],
+        // The upstream text is honest about the constraint ("sets containing Z");
+        // keep that qualifier rather than presenting a constrained list as THE
+        // answer.
+        [/Minimal sufficient adjustment sets\s+containing ([^:]+?) for estimating the (total|direct) effect of ([^:]+):/gi,
+         'Sufficient sets for the $2 effect of $3 that keep your current choice ($1):'],
+        [/Minimal sufficient adjustment sets\s+for estimating the (total|direct) effect of ([^:]+):/gi,
+         'To estimate the $1 effect of $2, control for:'],
         [/No adjustment is necessary to estimate the (total|direct) effect of ([^.]+)\./gi,
          'No control variables needed — the $1 effect of $2 can be estimated without adjustment.'],
         [/No adjustment sets found\./gi,
@@ -120,10 +198,28 @@
         });
     }
 
+    // "No adjustment sets found." means something different once the user has
+    // adjusted for something: not "the effect is unidentifiable" but "no
+    // sufficient set includes everything you picked".
+    var PLAIN_CONSTRAINED_EMPTY = [/No adjustment sets found\./gi,
+        'No sufficient adjustment set includes all of your current controls.'];
+
     function _enhancedDisplayAdjustmentInfo(kind) {
         if (_origDisplayAdjustmentInfo) _origDisplayAdjustmentInfo(kind);
         var el = document.getElementById('causal_effect');
-        if (el) _plainifyEl(el);
+        if (!el) return;
+        var g = (window.Model && Model.dag) ? Model.dag : null;
+        var hasAdj = !!(g && g.getAdjustedNodes().length);
+        if (hasAdj) {
+            var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false), n;
+            while ((n = walker.nextNode()))
+                n.textContent = n.textContent.replace(PLAIN_CONSTRAINED_EMPTY[0], PLAIN_CONSTRAINED_EMPTY[1]);
+        }
+        _plainifyEl(el);
+        if (hasAdj && (kind === 'total' || kind === 'direct') && !GraphAnalyzer.containsCycle(g)) {
+            var note = _unconstrainedNote(g, kind);
+            if (note) el.appendChild(note);
+        }
     }
 
     function _enhancedDisplayImplicationInfo(full) {
@@ -151,6 +247,10 @@
     // ── 3. Chevron arrows (replace PNG-based displayArrow) ────────────────────
 
     window.displayArrow = function (id, on) {
+        // Every show/hide/toggle of a section passes through here, so it is the
+        // one place to keep the header's aria-expanded state in sync too.
+        var hdr = document.querySelector('h3[aria-controls="' + id + '"]');
+        if (hdr) hdr.setAttribute('aria-expanded', on ? 'true' : 'false');
         var el = document.getElementById('a_' + id);
         if (!el) return;
         if (el.tagName === 'IMG') {
@@ -160,6 +260,25 @@
             el.dataset.open = on ? '1' : '0';
         }
     };
+
+    // ── 3b. Keyboard-operable section headers ─────────────────────────────────
+    // The collapsible <h3> headers only had an inline onclick, so they could not
+    // be reached or operated from the keyboard at all, and screen readers had no
+    // idea they were buttons or whether the section was open.
+    function initSectionHeaders() {
+        document.querySelectorAll('h3[onclick*="displayToggle"]').forEach(function (h) {
+            var m = /displayToggle\(\s*['"]([^'"]+)['"]/.exec(h.getAttribute('onclick') || '');
+            if (!m) return;
+            var target = document.getElementById(m[1]);
+            h.setAttribute('role', 'button');
+            h.setAttribute('tabindex', '0');
+            h.setAttribute('aria-controls', m[1]);
+            h.setAttribute('aria-expanded', (target && getComputedStyle(target).display === 'none') ? 'false' : 'true');
+            h.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); h.click(); }
+            });
+        });
+    }
 
     // ── 4. Beginner / Advanced mode ───────────────────────────────────────────
 
@@ -292,6 +411,14 @@
         if (!menu) return;
         var topItems = Array.prototype.filter.call(menu.children, function (li) { return li.querySelector('ul'); });
 
+        // Menu entries are <a href="#"> with an inline onclick and no
+        // "return false", so every click also navigated to "#": it scrolled the
+        // page to the top and replaced a "#dag=…" share link in the address bar.
+        menu.addEventListener('click', function (e) {
+            var a = e.target.closest && e.target.closest('a[href="#"]');
+            if (a) e.preventDefault();
+        });
+
         document.addEventListener('click', function (e) {
             if (!e.target.closest || !e.target.closest('#menu')) {
                 menu.querySelectorAll('li ul').forEach(function (ul) { ul.style.display = ''; });
@@ -344,6 +471,10 @@
             if (vs) vs.style.display = 'none';
             var dl = document.getElementById('btn-download-model');
             if (dl) dl.style.display = 'none';
+            // close() terminates a running analysis but left its Stop button
+            // showing the next time the dialog was opened.
+            var cancel = document.getElementById('btn-cancel-analysis');
+            if (cancel) cancel.style.display = 'none';
             document.getElementById('btn-run-analysis').disabled = true;
             document.getElementById('btn-import-dag').disabled = true;
             modal.style.display = 'flex';
@@ -540,7 +671,11 @@
             if (typeof Worker !== 'undefined') {
                 if (this._worker) this._worker.terminate();
                 try {
-                    this._worker = new Worker('js/causal-discovery.js');
+                    // Same URL (including the ?v= cache-buster) as the <script>
+                    // tag, so the worker can never run a stale cached copy of
+                    // the algorithm alongside a fresh main-thread copy.
+                    var tag = document.querySelector('script[src*="causal-discovery.js"]');
+                    this._worker = new Worker(tag ? tag.getAttribute('src') : 'js/causal-discovery.js');
                 } catch (e) {
                     this._worker = null;
                     this._runOnMainThread(this._csvText, alpha, useLingam, opts);
@@ -755,6 +890,14 @@
         function hide() { if (tip) { tip.classList.remove('on'); tip.style.display = 'none'; } }
 
         var sel = '.help-tip';
+        // Several badges sit inside a collapsible <h3>, whose inline onclick
+        // toggles the section. Clicking "?" for help must not fold the panel
+        // away; intercept in the capture phase, before the header's handler
+        // runs. On touch devices, where there is no hover, the tap shows the tip.
+        document.addEventListener('click', function (e) {
+            var el = e.target.closest && e.target.closest(sel);
+            if (el) { e.stopPropagation(); e.preventDefault(); show(el); }
+        }, true);
         document.addEventListener('mouseover', function (e) { var el = e.target.closest && e.target.closest(sel); if (el) show(el); });
         document.addEventListener('mouseout',  function (e) { var el = e.target.closest && e.target.closest(sel); if (el) hide(); });
         document.addEventListener('focusin',   function (e) { var el = e.target.closest && e.target.closest(sel); if (el) show(el); });
@@ -770,10 +913,13 @@
 
     window.exportRCode = function () {
         var code = (window.Model && Model.dag) ? Model.dag.toString() : 'dag { }';
+        // The model goes inside a single-quoted R string: a variable name such
+        // as "Parent's income" would otherwise terminate it early.
+        var rstr = code.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         var r =
             '# DAG exported from DAGitty — reproduce and analyse in R\n' +
             'library(dagitty)\n\n' +
-            'g <- dagitty(\'' + code + '\')\n\n' +
+            'g <- dagitty(\'' + rstr + '\')\n\n' +
             'plot(g)\n\n' +
             '# Tidyverse-friendly plotting & analysis with ggdag:\n' +
             '# library(ggdag)\n' +
@@ -792,13 +938,24 @@
 
     // ── 9. Undo/Redo keyboard handler ─────────────────────────────────────────
 
+    // Ctrl+Z inside a text field means "undo my typing". Intercepting it there
+    // rewound the whole diagram instead — while renaming a variable, editing the
+    // model code, or filling in the wizard — and blocked the field's own undo.
+    function _inTextField(e) {
+        var t = e.target;
+        if (!t || !t.tagName) return false;
+        var tag = t.tagName.toLowerCase();
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || !!t.isContentEditable;
+    }
+
     function initUndoRedoKeys() {
         // Wrap document.onkeydown that initialize() set
         var _orig = document.onkeydown;
         document.onkeydown = function (e) {
-            var mod = e.ctrlKey || e.metaKey;
-            if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); UndoRedo.undo(); return; }
-            if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); UndoRedo.redo(); return; }
+            var mod = (e.ctrlKey || e.metaKey) && !_inTextField(e);
+            var key = (e.key || '').toLowerCase();
+            if (mod && key === 'z' && !e.shiftKey) { e.preventDefault(); UndoRedo.undo(); return; }
+            if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) { e.preventDefault(); UndoRedo.redo(); return; }
             if (_orig) _orig.call(document, e);
         };
     }
@@ -832,6 +989,7 @@
 
         initUndoRedoKeys();
         initMenuKeyboard();
+        initSectionHeaders();
         initTooltips();
         BeginnerMode.init();
         ThemeToggle.init();

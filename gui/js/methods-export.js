@@ -42,7 +42,10 @@
                    'methods statement. Click a variable and tick "exposure" or "outcome".';
         }
 
+        // containsCycle() joins the path with the HTML entity "&rarr;" for the
+        // summary panel's innerHTML; this text lands in a textarea, so decode it.
         var cyclic = GraphAnalyzer.containsCycle(g);
+        if (cyclic) cyclic = String(cyclic).replace(/&rarr;/g, '→');
         var lines = [];
 
         // 1. Model overview
@@ -102,49 +105,66 @@
                             : (kind === 'adj_causalodds') ? 'total effect (reported as a causal odds ratio)'
                             : 'total effect';
             var expOut = 'the ' + effectLabel + ' of ' + expOutBase;
-            var msas = (isDirect ? GraphAnalyzer.listMsasDirectEffect(g)
-                                 : GraphAnalyzer.listMsasTotalEffect(g)).map(function (s) { return ids(s); });
+
+            // The minimal sufficient sets, IGNORING what the user has ticked as
+            // adjusted. listMsas*Effect(g) would instead treat those nodes as
+            // mandatory — and return nothing at all if one of them (a mediator,
+            // say) must not be adjusted for — which this statement used to
+            // report as "the effect is not identifiable". It is; the chosen set
+            // is just wrong. AdjustmentSets (ui-enhancements.js) does the
+            // unconstrained computation; fall back to the constrained call if
+            // it is unavailable.
+            var msas = (window.AdjustmentSets && AdjustmentSets.minimal(g, isDirect ? 'direct' : 'total')) ||
+                (isDirect ? GraphAnalyzer.listMsasDirectEffect(g)
+                          : GraphAnalyzer.listMsasTotalEffect(g)).map(function (s) { return ids(s); });
             var noSetExists = msas.length === 0;
             var noAdjNeeded = msas.length === 1 && msas[0].length === 0;
+            var isSuff = isDirect ? GraphAnalyzer.isAdjustmentSetDirectEffect(g) : GraphAnalyzer.isAdjustmentSet(g);
+            var isMinimal = !!(window.AdjustmentSets && AdjustmentSets.isOneOf(g, msas));
+            var mediatorNote = isDirect
+                ? ' Note that adjustment sets for the direct effect differ from those for the total effect, ' +
+                  'because variables on the indirect (mediated) paths must be held fixed.'
+                : '';
+            var pathsWord = isDirect ? 'biasing paths' : 'confounding (back-door) paths';
 
-            if (isDirect) {
-                var mediatorNote = ' Note that adjustment sets for the direct effect differ from those for the ' +
-                    'total effect, because variables on the indirect (mediated) paths must be held fixed.';
+            if (adjusted.length === 0) {
                 if (noSetExists) {
-                    lines.push('Under this DAG ' + expOut + ' is not identifiable by covariate adjustment alone' +
-                        (adjusted.length ? ', so the chosen adjustment set cannot recover it' : '') + '. ' +
-                        msaSentence(msas));
+                    lines.push('Under this DAG ' + expOut + ' is not identifiable by covariate adjustment alone: ' +
+                        'no set of measured variables blocks all ' + pathsWord + '.' + mediatorNote);
                 } else if (noAdjNeeded) {
-                    lines.push('Under this DAG no adjustment is required to estimate ' + expOut + '.' + mediatorNote);
-                } else if (adjusted.length === 0) {
-                    lines.push('To estimate ' + expOut + ' (the part of the effect of ' + list(exposures) + ' on ' +
-                        list(outcomes) + ' not transmitted through other variables shown) covariate adjustment is ' +
-                        'required. ' + msaSentence(msas) + mediatorNote);
+                    lines.push('Under this DAG no adjustment is required to estimate ' + expOut +
+                        ': there are no open ' + pathsWord + '.' + mediatorNote);
                 } else {
-                    lines.push('To estimate ' + expOut + ' we adjusted for ' + setBraces(adjusted) + '. ' +
+                    lines.push('Under this DAG ' + expOut + ' is ' + (isDirect ? 'not identified without adjustment'
+                        : 'confounded') + ': a naive unadjusted comparison would be biased. ' +
                         msaSentence(msas) + mediatorNote);
                 }
-            } else {
-                var isSuff = GraphAnalyzer.isAdjustmentSet(g);
-                if (adjusted.length === 0) {
-                    if (isSuff) {
-                        lines.push('Under this DAG no adjustment is required to estimate ' + expOut +
-                            ': there are no open confounding (back-door) paths.');
-                    } else {
-                        lines.push('Under this DAG ' + expOut + ' is confounded: a naive unadjusted comparison ' +
-                            'would be biased. ' + msaSentence(msas));
-                    }
-                } else {
-                    if (isSuff) {
-                        lines.push('To estimate ' + expOut + ' we adjusted for ' + setBraces(adjusted) +
-                            '. Under the DAG this set is sufficient to block all confounding (back-door) paths. ' +
-                            msaSentence(msas));
-                    } else {
-                        lines.push('WARNING: the chosen adjustment set ' + setBraces(adjusted) + ' is NOT sufficient ' +
-                            'to identify ' + expOut + ' under this DAG — confounding paths remain open. ' +
-                            msaSentence(msas));
-                    }
+            } else if (isSuff) {
+                var extra = '';
+                if (!isMinimal && noAdjNeeded) {
+                    extra = ' No adjustment would strictly have been necessary under this DAG.';
+                } else if (!isMinimal && !noSetExists) {
+                    extra = ' A smaller set would also suffice: ' + msaSentence(msas).replace(/^Minimal/, 'the minimal');
                 }
+                lines.push('To estimate ' + expOut + ' we adjusted for ' + setBraces(adjusted) +
+                    '. Under the DAG this set is sufficient to block all ' + pathsWord + '.' + extra + mediatorNote);
+            } else {
+                // Say what is wrong with the chosen set as precisely as we can:
+                // for the total effect, adjusting for anything on (or downstream
+                // of) a causal path from exposure to outcome is never allowed.
+                var forbidden = !isDirect && GraphAnalyzer.violatesAdjustmentCriterion(g);
+                var why = forbidden
+                    ? ' — it includes a variable that lies on, or is affected by, the causal pathway from ' +
+                      list(exposures) + ' to ' + list(outcomes) + ', which must not be adjusted for when ' +
+                      'estimating a total effect'
+                    : ' — ' + pathsWord + ' remain open';
+                var remedy = noSetExists
+                    ? 'No set of measured variables identifies this effect by adjustment under the current diagram.'
+                    : noAdjNeeded
+                        ? 'Under this DAG the effect could be estimated without any adjustment.'
+                        : msaSentence(msas);
+                lines.push('WARNING: the chosen adjustment set ' + setBraces(adjusted) + ' is NOT sufficient to ' +
+                    'identify ' + expOut + ' under this DAG' + why + '. ' + remedy + mediatorNote);
             }
         }
 

@@ -70,7 +70,7 @@
             target: '#btn-beginner-mode',
             title: 'You’re ready',
             body: 'New to this? <strong>Beginner mode</strong> hides the advanced panels. The <strong>Examples</strong> menu ' +
-                  'has ready-made diagrams to explore. Re-open this tour any time from <em>Help → Interactive tutorial</em>.'
+                  'has ready-made diagrams to explore. Re-open this tour any time from <em>Help → Tour the interface</em>.'
         }
     ];
 
