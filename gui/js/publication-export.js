@@ -78,7 +78,7 @@
     }
 
     function roleSets(g) {
-        var by = function (arr) { var s = {}; (arr || []).forEach(function (v) { s[v.id] = 1; }); return s; };
+        var by = function (arr) { var s = Object.create(null); (arr || []).forEach(function (v) { s[v.id] = 1; }); return s; };
         return {
             exposure: by(g.getSources()),
             outcome:  by(g.getTargets()),
@@ -123,7 +123,7 @@
     // bidirected/undirected edges for ranking. Does NOT touch the canvas model.
     function layeredLayout(g) {
         var ids = g.getVertices().map(function (v) { return v.id; });
-        var parents = {}, children = {};
+        var parents = Object.create(null), children = Object.create(null);
         ids.forEach(function (id) { parents[id] = []; children[id] = []; });
         g.getEdges().forEach(function (e) {
             if (e.directed === Graph.Edgetype.Directed && parents[e.v2.id] && children[e.v1.id]) {
@@ -133,7 +133,7 @@
         });
 
         // Longest-path layering via bounded relaxation (safe even if a cycle exists).
-        var layer = {};
+        var layer = Object.create(null);
         ids.forEach(function (id) { layer[id] = 0; });
         for (var it = 0; it < ids.length; it++) {
             var changed = false;
@@ -149,11 +149,11 @@
         ids.forEach(function (id) { (layers[layer[id]] = layers[layer[id]] || []).push(id); });
         layers = layers.filter(function (l) { return l && l.length; });
 
-        var pos = {};
+        var pos = Object.create(null);
         layers.forEach(function (L) { L.forEach(function (id, i) { pos[id] = i; }); });
         var sweep = function (useParents) {
             layers.forEach(function (L) {
-                var bary = {};
+                var bary = Object.create(null);
                 L.forEach(function (id) {
                     var nb = useParents ? parents[id] : children[id], sum = 0, c = 0;
                     nb.forEach(function (x) { if (pos[x] != null) { sum += pos[x]; c++; } });
@@ -165,12 +165,93 @@
         };
         for (var s = 0; s < 4; s++) { sweep(true); sweep(false); }
 
-        var coords = {}, hgap = 1.5, vgap = 1.0;
+        var coords = Object.create(null), hgap = 1.5, vgap = 1.0;
         layers.forEach(function (L, li) {
             var n = L.length;
             L.forEach(function (id, i) { coords[id] = { x: (i - (n - 1) / 2) * hgap, y: li * vgap }; });
         });
         return { coords: coords, layer: layer };
+    }
+
+    // Lay out measured node boxes, not just their centres. Fixed graph-unit
+    // spacing made descriptive variable names overlap in otherwise tidy DAGs.
+    function spaceTidyNodes(verts, node, layout, pad) {
+        var rows = Object.create(null), rowKeys;
+        verts.forEach(function (v) {
+            var key = layout.layer[v.id];
+            (rows[key] = rows[key] || []).push(v.id);
+        });
+        rowKeys = Object.keys(rows).sort(function (a, b) { return +a - +b; });
+        var widest = 0, gap = 54;
+        rowKeys.forEach(function (key) {
+            rows[key].sort(function (a, b) { return layout.coords[a].x - layout.coords[b].x; });
+            var width = -gap;
+            rows[key].forEach(function (id) { width += node[id].rx * 2 + gap; });
+            rows[key].width = width;
+            widest = Math.max(widest, width);
+        });
+        var rowY = pad;
+        rowKeys.forEach(function (key) {
+            var row = rows[key], x = pad + (widest - row.width) / 2, height = 0;
+            row.forEach(function (id) { height = Math.max(height, node[id].ry); });
+            row.forEach(function (id) {
+                var n = node[id];
+                n.cx = x + n.rx; n.cy = rowY + height;
+                n._t.setAttribute('x', n.cx); n._t.setAttribute('y', n.cy);
+                x += n.rx * 2 + gap;
+            });
+            rowY += height * 2 + 72;
+        });
+    }
+
+    // Route a long arrow around the full width of intervening nodes. A fixed
+    // 45px control-point offset only moves a quadratic curve 22.5px at its
+    // midpoint, so the old curve still ran through confounder/mediator labels.
+    function tidyControl(n1, n2, node, verts, preferLeft) {
+        var dy = n2.cy - n1.cy;
+        if (Math.abs(dy) < 1) {
+            if (Math.abs(n2.cx - n1.cx) < 1) return null;
+            // Undirected and bidirected edges can join nodes in the same row.
+            // Rotate the problem so these also clear intervening variables.
+            var rotated = Object.create(null);
+            verts.forEach(function (v) {
+                var n = node[v.id];
+                rotated[v.id] = { cx: n.cy, cy: n.cx, rx: n.ry, ry: n.rx };
+            });
+            var ids = verts.map(function (v) { return v.id; });
+            var a = ids.filter(function (id) { return node[id] === n1; })[0];
+            var b = ids.filter(function (id) { return node[id] === n2; })[0];
+            var c = tidyControl(rotated[a], rotated[b], rotated, verts, preferLeft);
+            return c ? { x: c.y, y: c.x } : null;
+        }
+        var left = (n1.cx + n2.cx) / 2, right = left, blocked = false;
+        verts.forEach(function (v) {
+            var n = node[v.id];
+            if (n === n1 || n === n2) return;
+            var lo = Math.min((n.cy - n.ry - 14 - n1.cy) / dy, (n.cy + n.ry + 14 - n1.cy) / dy);
+            var hi = Math.max((n.cy - n.ry - 14 - n1.cy) / dy, (n.cy + n.ry + 14 - n1.cy) / dy);
+            if (lo <= 0 || hi >= 1) return;
+            var lineLo = n1.cx + lo * (n2.cx - n1.cx);
+            var lineHi = n1.cx + hi * (n2.cx - n1.cx);
+            if (Math.max(lineLo, lineHi) >= n.cx - n.rx - 14 &&
+                Math.min(lineLo, lineHi) <= n.cx + n.rx + 14) blocked = true;
+            // In this parameterisation y(t) is linear. Requiring the curve to
+            // stay outside the box at both ends and its centre clears the row.
+            [lo, (lo + hi) / 2, hi].forEach(function (t) {
+                var base = (1 - t) * (1 - t) * n1.cx + t * t * n2.cx;
+                var weight = 2 * t * (1 - t);
+                left = Math.min(left, (n.cx - n.rx - 22 - base) / weight);
+                right = Math.max(right, (n.cx + n.rx + 22 - base) / weight);
+            });
+        });
+        if (!blocked) return null;
+        var mid = (n1.cx + n2.cx) / 2;
+        var leftCost = Math.abs(mid - left), rightCost = Math.abs(right - mid);
+        // Label measurements contain fractional pixels. Symmetric routes can
+        // differ by machine precision, which previously defeated alternation
+        // and put both long arrows on the same side of a mediator chain.
+        var useLeft = Math.abs(leftCost - rightCost) <= 1 ? preferLeft : leftCost < rightCost;
+        return { x: useLeft ? left : right, y: (n1.cy + n2.cy) / 2 };
     }
 
     // ── Core renderer ───────────────────────────────────────────────────────────
@@ -192,7 +273,9 @@
         var edgeWidth = mode === 'minimal' ? 1.4 : 1.7;
 
         // 1. Map graph coordinates to a pixel canvas.
-        var tidy = o.layout === 'tidy';
+        var tidy = o.layout === 'tidy' || !verts.every(function (v) {
+            return isFinite(v.layout_pos_x) && isFinite(v.layout_pos_y);
+        });
         var tl = tidy ? layeredLayout(g) : null;
         var coords = tl ? tl.coords : null;
         var nodeLayer = tl ? tl.layer : null;
@@ -210,9 +293,13 @@
         var px = function (x) { return pad + (x - minX) * scale; };
         var py = function (y) { return pad + (y - minY) * scale; };
 
-        var svg = el('svg', { xmlns: SVGNS, 'font-family': o.font });
+        var svg = el('svg', { 'font-family': o.font });
         var defs = el('defs');
         defs.appendChild(arrowMarker('pub-arrow', edgeColor));
+        var circle = el('marker', { id: 'pub-circle', viewBox: '0 0 10 10', refX: '5', refY: '5',
+            markerWidth: '7', markerHeight: '7', orient: 'auto' });
+        circle.appendChild(el('circle', { cx: '5', cy: '5', r: '3.1', fill: '#ffffff', stroke: edgeColor, 'stroke-width': '1' }));
+        defs.appendChild(circle);
         svg.appendChild(defs);
         container.appendChild(svg);
 
@@ -223,7 +310,7 @@
 
         // 2. Place + measure labels; size every node to a shared height for a
         //    consistent, tidy look.
-        var node = {};
+        var node = Object.create(null);
         var maxRy = 17;
         verts.forEach(function (v) {
             var t = el('text', {
@@ -243,14 +330,18 @@
             var n = node[v.id], padX = 15;
             n.ry = maxRy;
             n.hh = maxRy;
-            n.rx = Math.max(n._tw / 2 + padX, maxRy * 1.25);
+            // The label's upper/lower corners must fit the ellipse, whose
+            // usable width narrows away from its horizontal centre line.
+            var labelHalfHeight = Math.min(n._th / 2, maxRy * 0.95);
+            n.rx = Math.max((n._tw / 2 + padX) / Math.sqrt(1 - Math.pow(labelHalfHeight / maxRy, 2)), maxRy * 1.25);
             n.hw = Math.max(n._tw / 2 + padX, maxRy * 1.2);
             n.boxed = !o.uniform && isBoxed(v.id, roles);
             n.role = roleOf(v.id, roles);
         });
+        if (tidy) spaceTidyNodes(verts, node, tl, pad);
 
         // 3. Edges (under the nodes).
-        var longEdgeIdx = 0;
+        var longEdgeIdx = 0, bendMinX = Infinity, bendMaxX = -Infinity, bendMinY = Infinity, bendMaxY = -Infinity;
         edges.forEach(function (e) {
             var n1 = node[e.v1.id], n2 = node[e.v2.id];
             if (!n1 || !n2) return;
@@ -269,31 +360,38 @@
             // nodes/edges between them. Bow them aside, alternating sides.
             if (tidy && nodeLayer) {
                 var span = Math.abs((nodeLayer[e.v1.id] || 0) - (nodeLayer[e.v2.id] || 0));
-                if (span >= 2) {
-                    var ex = n2.cx - n1.cx, ey = n2.cy - n1.cy;
-                    var elen = Math.sqrt(ex * ex + ey * ey) || 1;
-                    var off = Math.max(45, Math.min((0.12 + 0.05 * (span - 1)) * elen, 150));
-                    var sign = (longEdgeIdx++ % 2 === 0) ? 1 : -1;
-                    ctrl = { x: (n1.cx + n2.cx) / 2 + (-ey / elen) * off * sign,
-                             y: (n1.cy + n2.cy) / 2 + (ex / elen) * off * sign };
+                if (span >= 2 || span === 0) {
+                    ctrl = tidyControl(n1, n2, node, verts, longEdgeIdx++ % 2 === 0);
                 }
             }
+            if (ctrl) {
+                bendMinX = Math.min(bendMinX, ctrl.x); bendMaxX = Math.max(bendMaxX, ctrl.x);
+                bendMinY = Math.min(bendMinY, ctrl.y); bendMaxY = Math.max(bendMaxY, ctrl.y);
+            }
+            var directed   = e.directed === Graph.Edgetype.Directed;
+            var bidirected = e.directed === Graph.Edgetype.Bidirected;
+            var partDirected = e.directed === Graph.Edgetype.PartDirected;
+            var circleStart = partDirected || e.directed === Graph.Edgetype.PartUndirected || e.directed === Graph.Edgetype.Unspecified;
+            var circleEnd = e.directed === Graph.Edgetype.Unspecified;
             var aim1 = ctrl || { x: n2.cx, y: n2.cy };
             var aim2 = ctrl || { x: n1.cx, y: n1.cy };
-            var s = boundaryPoint(n1, aim1.x, aim1.y, 1.5);
-            var t = boundaryPoint(n2, aim2.x, aim2.y, 2.5);
+            // Circle markers are centred on the endpoint, unlike arrow tips.
+            // Leave room for the whole circle so the later node fill does not
+            // cover its inner half and change the endpoint's appearance.
+            var s = boundaryPoint(n1, aim1.x, aim1.y, circleStart ? 6 : 1.5);
+            var t = boundaryPoint(n2, aim2.x, aim2.y, circleEnd ? 6 : 2.5);
             var d = ctrl
                 ? 'M' + s.x + ',' + s.y + ' Q' + ctrl.x + ',' + ctrl.y + ' ' + t.x + ',' + t.y
                 : 'M' + s.x + ',' + s.y + ' L' + t.x + ',' + t.y;
 
-            var directed   = e.directed === Graph.Edgetype.Directed;
-            var bidirected = e.directed === Graph.Edgetype.Bidirected;
             var path = el('path', {
                 d: d, fill: 'none', stroke: edgeColor, 'stroke-width': edgeWidth, 'stroke-linecap': 'round'
             });
             if (bidirected) { path.setAttribute('stroke-dasharray', ''); }
-            if (directed || bidirected) path.setAttribute('marker-end', 'url(#pub-arrow)');
+            if (directed || bidirected || partDirected) path.setAttribute('marker-end', 'url(#pub-arrow)');
             if (bidirected) path.setAttribute('marker-start', 'url(#pub-arrow)');
+            if (circleStart) path.setAttribute('marker-start', 'url(#pub-circle)');
+            if (circleEnd) path.setAttribute('marker-end', 'url(#pub-circle)');
             gEdges.appendChild(path);
         });
 
@@ -301,8 +399,8 @@
         verts.forEach(function (v) { drawNode(gNodes, node[v.id], v, roles, palette, o, mode); });
 
         // 5. Optional legend.
-        if (o.legend) {
-            var legendTop = pad + spanY * scale + 30;
+        if (o.legend && !o.uniform) {
+            var legendTop = Math.max(bendMaxY, Math.max.apply(null, verts.map(function (v) { return node[v.id].cy + node[v.id].ry; }))) + 36;
             buildLegend(svg, roles, palette, o, mode, pad, legendTop);
         }
 
@@ -312,7 +410,14 @@
         if (bb && bb.width) {
             x0 = bb.x - margin; y0 = bb.y - margin; w = bb.width + margin * 2; h = bb.height + margin * 2;
         } else {
-            x0 = 0; y0 = 0; w = pad * 2 + spanX * scale; h = pad * 2 + spanY * scale;
+            x0 = Math.min(bendMinX, Math.min.apply(null, verts.map(function (v) { return node[v.id].cx - node[v.id].rx; }))) - margin;
+            y0 = Math.min(bendMinY, Math.min.apply(null, verts.map(function (v) { return node[v.id].cy - node[v.id].ry; }))) - margin;
+            w = Math.max(bendMaxX, Math.max.apply(null, verts.map(function (v) { return node[v.id].cx + node[v.id].rx; }))) - x0 + margin;
+            h = Math.max(bendMaxY, Math.max.apply(null, verts.map(function (v) { return node[v.id].cy + node[v.id].ry; }))) - y0 + margin;
+            if (o.legend && !o.uniform) {
+                w = Math.max(w, pad + 250 - x0);
+                h += 36 + Object.keys(roles).filter(function (role) { return Object.keys(roles[role]).length; }).length * 19;
+            }
         }
         svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + w + ' ' + h);
         svg.setAttribute('width', Math.round(w));
@@ -334,7 +439,7 @@
         var ringForOutcome = false, halo = false;
 
         if (mode === 'minimal') {
-            textFill = col.stroke;
+            textFill = col.text;
             halo = true;
             drawShape = n.boxed || dashed; // keep meaning for conditioned / latent only
             shapeFill = 'none';
@@ -344,10 +449,10 @@
             shapeFill = o.transparent ? 'none' : '#ffffff';
             shapeStroke = col.stroke;
             shapeSW = 1.9;
-            textFill = (role === 'other' || role === 'adjusted') ? '#212529' : col.stroke;
+            textFill = col.text;
         } else if (palette === PALETTES.bw && !o.uniform) {
             if (role === 'exposure') shapeSW = 2.8;
-            if (role === 'outcome')  ringForOutcome = !n.boxed;
+            if (role === 'outcome')  ringForOutcome = true;
         }
 
         if (drawShape) {
@@ -362,8 +467,12 @@
             if (dashed) shape.setAttribute('stroke-dasharray', '5,3');
             gNodes.insertBefore(shape, t);
             if (ringForOutcome) {
-                gNodes.insertBefore(el('ellipse', { cx: n.cx, cy: n.cy, rx: n.rx - 3.4, ry: n.ry - 3.4,
-                    fill: 'none', stroke: shapeStroke, 'stroke-width': 1.2 }), t);
+                var ring = n.boxed
+                    ? el('rect', { x: n.cx - n.hw + 3.4, y: n.cy - n.hh + 3.4, width: n.hw * 2 - 6.8, height: n.hh * 2 - 6.8,
+                        rx: 2, fill: 'none', stroke: shapeStroke, 'stroke-width': 1.2 })
+                    : el('ellipse', { cx: n.cx, cy: n.cy, rx: n.rx - 3.4, ry: n.ry - 3.4,
+                        fill: 'none', stroke: shapeStroke, 'stroke-width': 1.2 });
+                gNodes.insertBefore(ring, t);
             }
         }
         t.setAttribute('fill', textFill);
@@ -419,11 +528,20 @@
             else if (mode === 'outline') { fill = '#ffffff'; stroke = col.stroke; }
             else { fill = col.fill; stroke = col.stroke; }
 
-            var swatch = boxed
+            var swatch = mode === 'minimal' && !boxed && role !== 'latent'
+                ? el('text', { x: x + sw / 2, y: cy, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+                    'font-size': fs, 'font-weight': '700', fill: col.text })
+                : boxed
                 ? el('rect', { x: x, y: cy - 6.5, width: sw, height: 13, rx: 3, fill: fill, stroke: stroke, 'stroke-width': 1.4 })
                 : el('ellipse', { cx: x + sw / 2, cy: cy, rx: sw / 2, ry: 7.5, fill: fill, stroke: stroke, 'stroke-width': 1.4 });
+            if (swatch.tagName === 'text') swatch.textContent = 'X';
+            if (palette === PALETTES.bw && role === 'exposure') swatch.setAttribute('stroke-width', '2.8');
             if (role === 'latent') swatch.setAttribute('stroke-dasharray', '4,2.5');
             gL.appendChild(swatch);
+            if (palette === PALETTES.bw && role === 'outcome') {
+                gL.appendChild(el('ellipse', { cx: x + sw / 2, cy: cy, rx: sw / 2 - 3.4, ry: 7.5 - 3.4,
+                    fill: 'none', stroke: stroke, 'stroke-width': 1.2 }));
+            }
 
             var txt = el('text', { x: x + sw + 9, y: cy, 'dominant-baseline': 'central',
                 'font-size': fs, fill: palette.other.text });
@@ -443,8 +561,7 @@
 
     function serialized(svg) {
         var clone = svg.cloneNode(true);
-        clone.setAttribute('xmlns', SVGNS);
-        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        clone.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns', SVGNS);
         return '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' +
             new XMLSerializer().serializeToString(clone);
     }
@@ -470,15 +587,24 @@
         var scale = scaleEl ? (parseFloat(scaleEl.value) || 3) : 3;
         var img = new Image();
         var url = URL.createObjectURL(new Blob([serialized(svg)], { type: 'image/svg+xml;charset=utf-8' }));
+        var fail = function () { setStatus('Could not create PNG at this size. Try a lower resolution or export SVG.', 'error'); };
+        setStatus('Preparing PNG…');
         img.onload = function () {
-            var canv = document.createElement('canvas');
-            canv.width = Math.round(w * scale); canv.height = Math.round(h * scale);
-            var ctx = canv.getContext('2d');
-            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-            if (!o.transparent) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canv.width, canv.height); }
-            ctx.drawImage(img, 0, 0, canv.width, canv.height);
-            URL.revokeObjectURL(url);
-            canv.toBlob(function (b) { if (b) triggerDownload(b, 'dagitty-figure.png'); }, 'image/png');
+            try {
+                var canv = document.createElement('canvas');
+                canv.width = Math.round(w * scale); canv.height = Math.round(h * scale);
+                var ctx = canv.getContext('2d');
+                if (!ctx) { fail(); return; }
+                ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                if (!o.transparent) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canv.width, canv.height); }
+                ctx.drawImage(img, 0, 0, canv.width, canv.height);
+                canv.toBlob(function (b) {
+                    if (!b) { fail(); return; }
+                    triggerDownload(b, 'dagitty-figure.png');
+                    setStatus('PNG saved (' + canv.width + ' × ' + canv.height + ' pixels).');
+                }, 'image/png');
+            } catch (e) { fail(); }
+            finally { URL.revokeObjectURL(url); }
         };
         img.onerror = function () { URL.revokeObjectURL(url); setStatus('Could not render PNG in this browser — try SVG.', 'error'); };
         img.src = url;
@@ -493,7 +619,7 @@
             '<!DOCTYPE html><html><head><title>DAGitty figure</title>' +
             '<style>@page{margin:12mm;}html,body{margin:0;height:100%;}' +
             'body{display:flex;align-items:center;justify-content:center;}' +
-            'svg{max-width:100%;height:auto;}</style></head><body>' + markup + '</body></html>');
+            'svg{display:block;max-width:100%;max-height:100%;width:auto;height:auto;}</style></head><body>' + markup + '</body></html>');
         win.document.close();
         win.focus();
         setTimeout(function () { try { win.print(); } catch (e) {} }, 350);

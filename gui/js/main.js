@@ -264,9 +264,19 @@ function causalEffectEstimates( effect_type ){
 			GUI.set_bias_mode('normal')
 			displayAdjustmentInfo("total"); break
 		case "adj_direct" :
+			if( Model.dag.getType() !== "dag" || Model.dag.getSelectedNodes().length ){
+				GUI.set_bias_mode('normal');
+				displayCausalMsg("Direct-effect adjustment is supported for DAGs without selection nodes. Choose total-effect analysis or review the graph type and selection assumptions.");
+				break;
+			}
 			GUI.set_bias_mode('direct')
 			displayAdjustmentInfo("direct"); break
 		case "adj_causalodds" :
+			if( Model.dag.getType() !== "dag" ){
+				GUI.set_bias_mode('normal');
+				displayCausalMsg("Causal-odds-ratio analysis requires a DAG with one exposure, one outcome and one selection node.");
+				break;
+			}
 			GUI.set_bias_mode('causalodds')
 			displayAdjustmentInfo("causalodds"); break
 		case "instrument" :
@@ -665,17 +675,45 @@ function displayGeneralInfo(){
 	*         + "<br/><br/>Open paths:<br/>"+dag_ancestor_pair_graph.listPathPairs(),true);*/
 }
 
-function loadDAGFromTextData(){
-	Model.dag = GraphParser.parseGuess( document.getElementById("adj_matrix").value );
-	if( !Model.dag.hasCompleteLayout() ){
-		var layouter = new GraphLayouter.Spring( Model.dag );
-		layouter.layout();
-	}
-	DAGittyControl.setGraph( Model.dag  );
-	displayHide("model_refresh");
+function modelCodeIsPending(){
 	var ta = document.getElementById("adj_matrix");
+	if( !ta || !ta.classList.contains("dirty") ){ return false; }
+	if( window.Workspace && Workspace.toast ) Workspace.toast("Apply or download your edited model code before replacing the diagram.", "warning");
+	return true;
+}
+
+function modelCodeChanged(){
+	var ta = document.getElementById("adj_matrix"), hint = document.getElementById("model_refresh");
+	var same = Model.dag && ta.value === Model.dag.toString();
+	ta.classList.toggle("dirty", !same);
+	if( hint ){
+		hint.textContent = "Code edited — click Update to apply.";
+		hint.removeAttribute("role");
+	}
+	(same ? displayHide : displayShow)("model_refresh");
+}
+
+function loadDAGFromTextData(){
+	var ta = document.getElementById("adj_matrix"), next;
+	try{
+		next = GraphParser.parseGuess( ta.value );
+		if( !next.hasCompleteLayout() ) new GraphLayouter.Spring(next).layout();
+	} catch( e ){
+		ta.classList.add("dirty");
+		var hint = document.getElementById("model_refresh");
+		if( hint ){
+			hint.textContent = "Could not read this model code. Check the graph syntax and try Update again; your diagram is unchanged.";
+			hint.setAttribute("role", "alert");
+		}
+		displayShow("model_refresh");
+		return false;
+	}
 	ta.style.backgroundColor = "";   // the theme's stylesheet owns the colour
 	ta.classList.remove("dirty");
+	Model.dag = next;
+	DAGittyControl.setGraph( next );
+	displayHide("model_refresh");
+	return true;
 }
 
 function generateSpringLayout(){
@@ -686,6 +724,7 @@ function generateSpringLayout(){
 };
 
 function loadExample( nr ){
+	if( modelCodeIsPending() ) return false;
 	nr = parseInt( nr )
 	if( examples[nr].d ){
 		document.getElementById("adj_matrix").value = examples[nr].d 
@@ -697,6 +736,7 @@ function loadExample( nr ){
 }
 
 function newModel(){
+	if( modelCodeIsPending() ) return false;
 	document.getElementById("adj_matrix").value = 'dag { bb="0,0,1,1" }'
 	loadDAGFromTextData();
 }
@@ -710,6 +750,7 @@ function newModel2(ename){
 	return true;
 }
 function newModel3(ename,oname){
+	if( modelCodeIsPending() ) return false;
 	if( oname == null ){ return false; }
 	oname = (""+oname).trim()
 	if( oname == "" || ename == oname ){ return false; }
@@ -834,11 +875,13 @@ function saveOnlineForm(){
 }
 
 async function loadOnline( url ){
+	if( modelCodeIsPending() ) return false;
 	var graphid = getModelIdFromURL( url )
 	try{
 	   	const response = await fetch( "https://dagitty.net/db/id/"+graphid )
 		if( response.ok ){
 			const modelsyntax = await response.json()
+			if( modelCodeIsPending() ) return false;
 			DAGittyControl.getView().closeDialog()
 			document.getElementById("adj_matrix").value = modelsyntax.g
 			Model.uniqid = modelsyntax.g.id

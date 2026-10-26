@@ -13,31 +13,53 @@ approachable for people new to causal inference, while keeping all of the origin
 
 - 🎨 Modern, responsive redesign with automatic light/dark mode
 - 🧭 **Interactive guided tutorial** for first-time users (*Help → Tour the interface*, and a one-time prompt on first visit)
-- 🛤️ **Paths panel** — lists every path between exposure and outcome, says whether it is causal or biasing
+- 🪜 **Guided DAG builder** — start with an exposure and outcome, add measured or unmeasured
+  variables and optional study selection, then review the arrows suggested by your chosen roles.
+  Uncertain variables start without assumed arrows; drafts survive closing the builder.
+- 🛤️ **Paths panel** — lists up to 40 paths between exposure and outcome, says whether each is causal or biasing
   and open or blocked, and explains *why* (*“Open because you adjusted for Z, a collider on this path”*);
   hovering a path highlights it on the canvas
-- 📊 **Test implications against your data** — upload the study data and every implied conditional
-  independence is tested in the browser (partial correlation, Fisher z, Holm-adjusted p-values; the
-  equivalent of `localTests()` in the R package), with a ready-to-paste sentence for the methods statement
+- 📊 **Test implications against your data** — upload study data and test implied conditional
+  independencies in the browser (partial correlation, Fisher z, Holm-adjusted p-values;
+  a linear parametric check similar to `localTests()` in the R package), with a ready-to-paste sentence
+  for the methods statement. Constant or singular data and duplicate column mappings are flagged;
+  changing model assumptions, data or settings invalidates the old results, while moving nodes preserves
+  them. These tests do not establish causality
 - 📄 **One-file report** — figure, roles, adjustment verdict and minimal sets, diagram check, paths,
   implications, test results, methods statement, model code and R code in a single HTML file
   (machine-readable JSON embedded), for supplementary material
 - ⌨️ **Edit as a list** — a keyboard- and screen-reader-operable alternative to the canvas: tables of
   variables (with roles) and arrows that edit the live diagram
 - 📝 **"Assumptions for your paper"** — a one-click, plain-language statement of the (often untestable) assumptions your diagram requires to read a result as causal, ready to paste into a methods or limitations section
-- 💬 Plain-language analysis output (e.g. *“Your chosen controls block all confounding”* instead of *“Correctly adjusted”*)
+- 💬 Plain-language analysis output (e.g. *“Your chosen controls are sufficient for this analysis under the diagram”* instead of *“Correctly adjusted”*)
 - 🩺 **Diagram check** — names the specific mistake and the variable involved (*“M sits on a causal pathway
   from X to Y — controlling for it removes part of the effect you are trying to measure”*): mediators,
   colliders, arrows drawn the wrong way round, sample selection on a common effect
 - 🧰 Beginner / Advanced mode, undo / redo, empty-canvas hints, and inline help on every concept
-- 💾 **Never lose work** — the diagram is saved in your browser and restored on the next visit;
+- 💾 **Browser autosave** — when browser storage is available, the diagram can be restored on the next visit;
   open a saved `.dag` file from the Model menu or by dragging it onto the page
 - 🔗 **Copy shareable link** — the whole diagram travels inside the URL, so a collaborator opening it
   sees exactly your model. Nothing is uploaded anywhere
 - 📂 Machine-readable model code plus PNG / JPEG / SVG / LaTeX / R (dagitty + ggdag) export
-- 🔬 Optional **Generate DAG from data** — in-browser causal discovery with the PC algorithm plus
+- 🔬 Optional **Explore a graph from data (advanced)** — in-browser causal discovery with the PC algorithm and optional
   [DirectLiNGAM](https://www.jmlr.org/papers/v12/shimizu11a.html) (a port of
-  [`lingam.DirectLiNGAM`](https://github.com/cdt15/lingam) v1.13.0); the suggested model is always a DAG
+  [`lingam.DirectLiNGAM`](https://github.com/cdt15/lingam) v1.13.0). Ordering is off by default:
+  unresolved connections remain undirected in a PDAG, rather than implying an unmeasured common cause.
+  The algorithms rely on strong assumptions; suggested directions need subject-matter review
+
+The October 2026 usability review also improved keyboard help and dialog navigation, preserved manual
+theme choices when the OS theme changes, and made publication layouts account for long variable names
+and arrows that skip intermediate variables. SVG export preserves uncertain PAG endpoints; R code in
+the dialog and report uses the same generator and retains the graph's roles and coordinates.
+
+The interface has a full-width toolbar, clearer section headings and more room for analysis text.
+On small screens, controls and analysis appear below the canvas. Layout edits are autosaved too;
+unapplied model-code drafts are protected when opening files or replacing the diagram.
+
+Dense publication figures can still need manual positioning. Model checks and generated methods text
+describe implications of the supplied assumptions; neither a clean diagram check nor non-significant
+independence tests validate those assumptions. Before using the tool in research, test the workflow with
+novice users and have causal inference experts review the model and study-specific wording.
 
 The diagram editing and analysis engine is the original DAGitty by Johannes Textor & Benito van der Zander
 (GNU GPL v2). The full upstream project description follows.

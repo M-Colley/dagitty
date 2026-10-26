@@ -19,11 +19,24 @@
 
     var state = null;
     var root = null;
+    var returnFocus = null;
 
     function esc(s) {
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
-    function clean(name) { return String(name || '').replace(/["{}]/g, '').trim(); }
+    function clean(name) { return String(name || '').trim(); }
+    function quote(name) { return '"' + name.replace(/"/g, '\\"') + '"'; }
+    function nameError(name, current) {
+        if (!name) return 'Enter a variable name.';
+        if (/[\\\x00-\x1f\x7f]/.test(name)) return 'Use a name without backslashes or control characters.';
+        if (name === 'graph' || name === 'node' || Object.prototype.hasOwnProperty.call(Object.prototype, name)) return '“' + name + '” is reserved by the diagram engine. Choose a different variable name.';
+        var taken = [];
+        if (current !== 'exposure') taken.push(state.exposure);
+        if (current !== 'outcome') taken.push(state.outcome);
+        state.others.forEach(function (o) { taken.push(o.name); });
+        if (current !== 'selection' && state.selection.enabled) taken.push(state.selection.name);
+        return taken.indexOf(name) >= 0 ? 'Each variable needs a different name: “' + name + '” is already in use.' : '';
+    }
 
     // ── Steps ───────────────────────────────────────────────────────────────────
 
@@ -35,10 +48,10 @@
                   '<p class="wiz-lead">A <strong>causal diagram</strong> (a DAG) is a picture of what you believe ' +
                   'causes what. We\'ll build one together in a few short steps — you can edit everything afterwards.</p>' +
                   '<fieldset class="wiz-fieldset"><legend>How much do you want to see?</legend>' +
-                    '<label class="wiz-radio"><input type="radio" name="wiz-mode" value="beginner" checked> ' +
+                    '<label class="wiz-radio"><input type="radio" name="wiz-mode" value="beginner"' + (state.mode === 'beginner' ? ' checked' : '') + '> ' +
                       '<span><strong>Beginner</strong> — a simplified interface with just the essentials. ' +
                       '<span class="wiz-muted">Recommended if you\'re new to causal inference.</span></span></label>' +
-                    '<label class="wiz-radio"><input type="radio" name="wiz-mode" value="advanced"> ' +
+                    '<label class="wiz-radio"><input type="radio" name="wiz-mode" value="advanced"' + (state.mode === 'advanced' ? ' checked' : '') + '> ' +
                       '<span><strong>Advanced</strong> — every panel and option available.</span></label>' +
                   '</fieldset>';
             },
@@ -60,7 +73,8 @@
             },
             focus: 'wiz-exposure',
             enterAdvances: true,
-            valid: function () { return clean(root.querySelector('#wiz-exposure').value).length > 0; },
+            valid: function () { return !nameError(clean(root.querySelector('#wiz-exposure').value), 'exposure'); },
+            invalidMsg: function () { return nameError(clean(root.querySelector('#wiz-exposure').value), 'exposure'); },
             onLeave: function () { state.exposure = clean(root.querySelector('#wiz-exposure').value); }
         },
         {
@@ -78,13 +92,11 @@
             enterAdvances: true,
             valid: function () {
                 var o = clean(root.querySelector('#wiz-outcome').value);
-                return o.length > 0 && o !== state.exposure;
+                return !nameError(o, 'outcome');
             },
             invalidMsg: function () {
                 var o = clean(root.querySelector('#wiz-outcome').value);
-                if (!o.length) return 'Enter an outcome name.';
-                if (o === state.exposure) return 'The outcome must be different from the exposure.';
-                return '';
+                return nameError(o, 'outcome');
             },
             onLeave: function () { state.outcome = clean(root.querySelector('#wiz-outcome').value); }
         },
@@ -94,25 +106,25 @@
                 return '' +
                   '<p class="wiz-lead">Add other variables that matter for the ' +
                   '<strong>' + esc(state.exposure || 'exposure') + ' → ' + esc(state.outcome || 'outcome') + '</strong> ' +
-                  'relationship. Pick a role — we\'ll draw the usual arrows automatically, and you can fine-tune them ' +
+                  'relationship. Pick a role if you know it — we\'ll suggest arrows for that role, and you can fine-tune them ' +
                   'on the canvas afterwards. Mark whether each is <strong>measured</strong>: unmeasured variables ' +
                   'become unobserved (latent) and can\'t be adjusted for. This step is optional.</p>' +
                   '<dl class="wiz-defs">' +
                     '<div><dt>Confounder</dt><dd>a common cause of both the exposure and the outcome ' +
-                      '(creates a spurious association — usually must be adjusted for).</dd></div>' +
+                      '(can create a noncausal association; may need to be adjusted for).</dd></div>' +
                     '<div><dt>Mediator</dt><dd>sits on the causal pathway: exposure → mediator → outcome ' +
                       '(part of how the effect happens).</dd></div>' +
                     '<div><dt>Collider</dt><dd>a common effect of two variables ' +
                       '(adjusting for it can <em>create</em> bias).</dd></div>' +
-                    '<div><dt>Other</dt><dd>e.g. another cause of the outcome; no arrows added automatically.</dd></div>' +
+                    '<div><dt>Other / not sure yet</dt><dd>no arrows added automatically; connect it in the editor.</dd></div>' +
                   '</dl>' +
                   '<div class="wiz-add-row">' +
-                    '<input type="text" id="wiz-var-name" class="wiz-input" placeholder="Variable name" autocomplete="off">' +
-                    '<select id="wiz-var-role" class="wiz-input">' +
+                    '<input type="text" id="wiz-var-name" class="wiz-input" placeholder="Variable name" aria-label="Other variable name" autocomplete="off" value="' + esc(state.pending.name) + '">' +
+                    '<select id="wiz-var-role" class="wiz-input" aria-label="Suggested role">' +
+                      '<option value="other">Other / not sure yet</option>' +
                       '<option value="confounder">Confounder</option>' +
                       '<option value="mediator">Mediator</option>' +
                       '<option value="collider">Collider</option>' +
-                      '<option value="other">Other</option>' +
                     '</select>' +
                     '<label class="wiz-check wiz-measured"><input type="checkbox" id="wiz-var-measured" checked> measured</label>' +
                     '<button type="button" class="wiz-add-btn" id="wiz-add-var">Add</button>' +
@@ -121,18 +133,22 @@
             },
             focus: 'wiz-var-name',
             mount: function () {
+                root.querySelector('#wiz-var-role').value = state.pending.role;
+                root.querySelector('#wiz-var-measured').checked = state.pending.measured;
                 var add = function () {
                     var nameEl = root.querySelector('#wiz-var-name');
                     var name = clean(nameEl.value);
                     var role = root.querySelector('#wiz-var-role').value;
                     var measured = root.querySelector('#wiz-var-measured').checked;
-                    if (!name) return;
-                    var taken = name === state.exposure || name === state.outcome ||
-                        state.others.some(function (o) { return o.name === name; });
-                    if (taken) { flash(nameEl); return; }
+                    var error = nameError(name);
+                    if (error) { flash(nameEl); announce(error); nameEl.focus(); return; }
                     state.others.push({ name: name, role: role, measured: measured });
+                    state.pending = { name: '', role: 'other', measured: true };
                     nameEl.value = ''; nameEl.focus();
+                    root.querySelector('#wiz-var-role').value = 'other';
                     root.querySelector('#wiz-var-measured').checked = true;
+                    var oldError = root.querySelector('.wiz-error');
+                    if (oldError) oldError.remove();
                     renderVarList();
                 };
                 root.querySelector('#wiz-add-var').addEventListener('click', add);
@@ -140,6 +156,15 @@
                     if (e.key === 'Enter') { e.preventDefault(); add(); }
                 });
                 renderVarList();
+            },
+            valid: function () { return !clean(root.querySelector('#wiz-var-name').value); },
+            invalidMsg: function () { return 'Choose Add to include the variable you typed, or clear its name to continue.'; },
+            onLeave: function () {
+                state.pending = {
+                    name: root.querySelector('#wiz-var-name').value,
+                    role: root.querySelector('#wiz-var-role').value,
+                    measured: root.querySelector('#wiz-var-measured').checked
+                };
             }
         },
         {
@@ -149,8 +174,9 @@
                   '<p class="wiz-lead">Optional but valuable. A <span class="wiz-term">selection node</span> represents ' +
                   'whether someone ended up in your sample (e.g. "agreed to join the study", "wasn\'t lost to ' +
                   'follow-up"). Because everyone in your data <em>is</em> selected, the analysis conditions on it — so ' +
-                  'if the exposure or outcome affects selection, you get a <strong>collider (selection) bias</strong> ' +
-                  'that\'s easy to overlook.</p>' +
+                  'if selection is a common effect on a path between exposure and outcome, conditioning on it ' +
+                  'can open that path and introduce <strong>selection bias</strong>. An arrow into selection by itself ' +
+                  'does not establish bias.</p>' +
                   '<label class="wiz-check"><input type="checkbox" id="wiz-sel-enabled"> Add a selection node</label>' +
                   '<div id="wiz-sel-detail" style="display:none;margin-top:.9em">' +
                     '<label class="wiz-input-label">Name of the selection variable' +
@@ -174,15 +200,15 @@
                 grid.innerHTML = '';
                 var warn = function () {
                     var w = root.querySelector('#wiz-sel-warn');
-                    var exp = grid.querySelector('input[data-cause="' + cssEsc(state.exposure) + '"]');
-                    var out = grid.querySelector('input[data-cause="' + cssEsc(state.outcome) + '"]');
-                    if (w) w.style.display = (exp && exp.checked && out && out.checked) ? 'block' : 'none';
+                    var selected = [];
+                    grid.querySelectorAll('input:checked').forEach(function (cb) { selected.push(cb.getAttribute('data-cause')); });
+                    if (w) w.style.display = selected.indexOf(state.exposure) >= 0 && selected.indexOf(state.outcome) >= 0 ? 'block' : 'none';
                 };
                 allVarNames().forEach(function (n) {
                     var lbl = document.createElement('label');
                     lbl.className = 'wiz-check';
                     var cb = document.createElement('input');
-                    cb.type = 'checkbox'; cb.checked = !!state.selection.causes[n];
+                    cb.type = 'checkbox'; cb.checked = state.selection.causes[n] === true;
                     cb.setAttribute('data-cause', n);
                     cb.addEventListener('change', warn);
                     lbl.appendChild(cb); lbl.appendChild(document.createTextNode(' ' + n));
@@ -190,12 +216,17 @@
                 });
                 warn();
             },
+            valid: function () {
+                return !root.querySelector('#wiz-sel-enabled').checked ||
+                    !nameError(clean(root.querySelector('#wiz-sel-name').value), 'selection');
+            },
+            invalidMsg: function () { return nameError(clean(root.querySelector('#wiz-sel-name').value), 'selection'); },
             onLeave: function () {
                 var enabledEl = root.querySelector('#wiz-sel-enabled');
                 state.selection.enabled = !!(enabledEl && enabledEl.checked);
                 var nameEl = root.querySelector('#wiz-sel-name');
-                if (nameEl) state.selection.name = clean(nameEl.value) || 'Selected';
-                state.selection.causes = {};
+                if (nameEl) state.selection.name = clean(nameEl.value);
+                state.selection.causes = Object.create(null);
                 root.querySelectorAll('#wiz-sel-causes input[type="checkbox"]').forEach(function (cb) {
                     state.selection.causes[cb.getAttribute('data-cause')] = cb.checked;
                 });
@@ -210,8 +241,9 @@
                 return '' +
                   '<p class="wiz-lead">Your diagram has <strong>' + n + '</strong> variable' + (n !== 1 ? 's' : '') +
                   ' and <strong>' + nEdges + '</strong> arrow' + (nEdges !== 1 ? 's' : '') +
-                  ' (added automatically from the roles you chose). We\'ll draw it, arrange it, and open it in the ' +
-                  'editor — where you can add or change arrows, and DAGitty will tell you what to adjust for.</p>' +
+                  ' (suggested from the roles you chose, including a direct exposure → outcome arrow). These are ' +
+                  '<strong>starting assumptions, not findings from data</strong>. Review them in the editor before ' +
+                  'using the adjustment advice; an omitted arrow is also a causal assumption.</p>' +
                   '<div class="wiz-summary">' +
                     '<p><span class="wiz-pill wiz-pill-exp">exposure</span> ' + esc(state.exposure || '—') + '</p>' +
                     '<p><span class="wiz-pill wiz-pill-out">outcome</span> ' + esc(state.outcome || '—') + '</p>' +
@@ -220,13 +252,17 @@
                     (unmeasured.length ? '<p><span class="wiz-pill">unobserved</span> ' + esc(unmeasured.join(', ')) + '</p>' : '') +
                     (state.selection.enabled ? '<p><span class="wiz-pill">selection</span> ' + esc(state.selection.name) + '</p>' : '') +
                   '</div>' +
-                  '<label class="wiz-check"><input type="checkbox" id="wiz-tour" checked> ' +
+                  '<details class="wiz-summary"><summary>Review the suggested arrows (' + nEdges + ')</summary>' +
+                    '<ul>' + autoEdges().map(function (e) { return '<li>' + esc(e.from) + ' → ' + esc(e.to) + '</li>'; }).join('') + '</ul>' +
+                    '<p>You can remove or change any of these arrows on the canvas or with “Edit as a list”.</p>' +
+                  '</details>' +
+                  '<p class="wiz-sub">Creating this diagram replaces the current diagram in the editor.</p>' +
+                  '<label class="wiz-check"><input type="checkbox" id="wiz-tour"' + (state.wantTour ? ' checked' : '') + '> ' +
                     'Give me a quick tour of the interface afterwards</label>';
-            }
+            },
+            onLeave: function () { state.wantTour = root.querySelector('#wiz-tour').checked; }
         }
     ];
-
-    function cssEsc(s) { return String(s).replace(/(["\\\]\[])/g, '\\$1'); }
 
     // ── Sub-renderers ─────────────────────────────────────────────────────────
 
@@ -242,11 +278,12 @@
             var li = document.createElement('li');
             li.className = 'wiz-chip';
             li.innerHTML = '<span>' + esc(o.name) + '</span><span class="wiz-chip-role">' + o.role +
-                (o.measured ? '' : ' · unobserved') + '</span><button type="button" aria-label="Remove">✕</button>';
+                (o.measured ? ' · measured' : ' · unobserved') + '</span><button type="button" aria-label="Remove ' + esc(o.name) + '">✕</button>';
             li.querySelector('button').addEventListener('click', function () {
                 var removed = state.others.splice(i, 1)[0];
                 if (removed) delete state.selection.causes[removed.name];
                 renderVarList();
+                root.querySelector('#wiz-var-name').focus();
             });
             ul.appendChild(li);
         });
@@ -281,7 +318,7 @@
         });
         if (state.selection.enabled && state.selection.name) {
             Object.keys(state.selection.causes).forEach(function (v) {
-                if (state.selection.causes[v]) add(v, state.selection.name);
+                if (state.selection.causes[v] && allVarNames().indexOf(v) >= 0) add(v, state.selection.name);
             });
         }
         return edges;
@@ -289,12 +326,12 @@
 
     function buildCode() {
         var lines = ['dag {'];
-        var nodeLine = function (name, attr) { return '"' + name + '"' + (attr ? ' [' + attr + ']' : ''); };
+        var nodeLine = function (name, attr) { return quote(name) + (attr ? ' [' + attr + ']' : ''); };
         lines.push(nodeLine(state.exposure, 'exposure'));
         lines.push(nodeLine(state.outcome, 'outcome'));
         state.others.forEach(function (o) { lines.push(nodeLine(o.name, o.measured ? null : 'latent')); });
         if (state.selection.enabled && state.selection.name) lines.push(nodeLine(state.selection.name, 'selected'));
-        autoEdges().forEach(function (e) { lines.push('"' + e.from + '" -> "' + e.to + '"'); });
+        autoEdges().forEach(function (e) { lines.push(quote(e.from) + ' -> ' + quote(e.to)); });
         lines.push('}');
         return lines.join('\n');
     }
@@ -308,14 +345,15 @@
         root.className = 'modal-overlay';
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-modal', 'true');
+        root.setAttribute('aria-labelledby', 'wiz-title');
         root.style.display = 'none';
         root.innerHTML =
             '<div class="modal-dialog wiz-dialog">' +
               '<div class="modal-header">' +
-                '<h2 id="wiz-title"></h2>' +
+                '<h2 id="wiz-title" tabindex="-1"></h2>' +
                 '<button type="button" class="modal-close" aria-label="Close" id="wiz-close">✕</button>' +
               '</div>' +
-              '<div class="wiz-progress" id="wiz-progress" aria-hidden="true"></div>' +
+              '<div class="wiz-progress" id="wiz-progress" role="progressbar" aria-label="Diagram builder progress" aria-valuemin="1" aria-valuemax="' + STEPS.length + '"></div>' +
               '<div class="modal-body wiz-body" id="wiz-body"></div>' +
               '<div class="modal-footer wiz-footer">' +
                 '<button type="button" class="btn-secondary" id="wiz-back">Back</button>' +
@@ -329,7 +367,7 @@
         root.querySelector('#wiz-skip').addEventListener('click', cancel);
         root.querySelector('#wiz-back').addEventListener('click', back);
         root.querySelector('#wiz-next').addEventListener('click', next);
-        root.addEventListener('click', function (e) { if (e.target === root) cancel(); });
+        // Closing is explicit: an accidental click outside must not lose a draft.
         document.addEventListener('keydown', function (e) {
             if (root.style.display !== 'flex') return;
             if (e.key === 'Escape') { e.preventDefault(); cancel(); }
@@ -344,8 +382,10 @@
         if (step.mount) step.mount();
 
         var prog = root.querySelector('#wiz-progress');
+        prog.setAttribute('aria-valuenow', String(state.step + 1));
+        prog.setAttribute('aria-valuetext', 'Step ' + (state.step + 1) + ' of ' + STEPS.length + ': ' + step.title);
         prog.innerHTML = STEPS.map(function (s, i) {
-            return '<span class="wiz-dot' + (i === state.step ? ' on' : '') + (i < state.step ? ' done' : '') + '"></span>';
+            return '<span aria-hidden="true" class="wiz-dot' + (i === state.step ? ' on' : '') + (i < state.step ? ' done' : '') + '"></span>';
         }).join('');
 
         root.querySelector('#wiz-back').style.visibility = state.step === 0 ? 'hidden' : 'visible';
@@ -354,14 +394,14 @@
         if (step.focus) {
             var f = root.querySelector('#' + step.focus);
             if (f) {
-                setTimeout(function () { f.focus(); }, 30);
+                f.focus();
                 // Type a name, press Enter, move on — the natural rhythm for a
                 // single-field step. (The variables step wires Enter to "Add".)
                 if (step.enterAdvances) f.addEventListener('keydown', function (e) {
                     if (e.key === 'Enter') { e.preventDefault(); next(); }
                 });
             }
-        }
+        } else root.querySelector('#wiz-title').focus();
     }
 
     function next() {
@@ -371,6 +411,7 @@
             var f = step.focus && root.querySelector('#' + step.focus);
             if (f) flash(f);
             announce(msg);
+            if (f) f.focus();
             return;
         }
         if (step.onLeave) step.onLeave();
@@ -391,6 +432,7 @@
         if (ex) ex.remove();
         var p = document.createElement('p');
         p.className = 'wiz-error';
+        p.setAttribute('role', 'alert');
         p.textContent = msg;
         body.appendChild(p);
     }
@@ -399,21 +441,33 @@
 
     function finish() {
         var wantTour = root.querySelector('#wiz-tour') && root.querySelector('#wiz-tour').checked;
+        var ta = document.getElementById('adj_matrix');
+        if (ta && ta.classList.contains('dirty')) {
+            announce('Your model code has unapplied changes. Close this builder and update or save that code before creating a new diagram. Your builder draft will be kept.');
+            return;
+        }
+
+        var code = buildCode();
+        var previousCode = ta ? ta.value : '';
+        try {
+            // Validate before replacing either the editor or the current diagram.
+            if (window.GraphParser) GraphParser.parseGuess(code);
+            if (!window.loadDAGFromTextData) throw new Error('The editor is not ready yet.');
+            if (ta) ta.value = code;
+            if (loadDAGFromTextData() === false) throw new Error('The editor could not read the diagram.');
+        } catch (e) {
+            if (ta) ta.value = previousCode;
+            announce('The diagram could not be created. Your builder draft is still here; check the variable names and try again.');
+            return;
+        }
 
         if (window.BeginnerMode) {
             if (state.mode === 'beginner' && !BeginnerMode.active) BeginnerMode.toggle();
             if (state.mode === 'advanced' && BeginnerMode.active) BeginnerMode.toggle();
         }
 
-        var code = buildCode();
-        var ta = document.getElementById('adj_matrix');
-        if (ta) ta.value = code;
-        try {
-            if (window.loadDAGFromTextData) loadDAGFromTextData();
-            if (window.generateSpringLayout) generateSpringLayout();
-        } catch (e) { /* leave the code in the panel for manual Update */ }
-
         hide();
+        state = null;
         try { localStorage.setItem('dagitty_tour_done', '1'); } catch (e) {}
 
         if (wantTour && window.GuidedTour) setTimeout(function () { GuidedTour.start(); }, 250);
@@ -421,15 +475,26 @@
 
     function start() {
         ensureRoot();
-        state = {
+        returnFocus = document.activeElement;
+        if (!state) state = {
             step: 0, mode: 'beginner', exposure: '', outcome: '', others: [],
-            selection: { enabled: false, name: 'Selected', causes: {} }
+            pending: { name: '', role: 'other', measured: true }, wantTour: true,
+            selection: { enabled: false, name: 'Selected', causes: Object.create(null) }
         };
         root.style.display = 'flex';
         show();
     }
-    function hide() { if (root) root.style.display = 'none'; }
-    function cancel() { hide(); }
+    function hide() {
+        if (root) root.style.display = 'none';
+        if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
+    }
+    function cancel() {
+        if (state) {
+            var step = STEPS[state.step];
+            if (step.onLeave) step.onLeave();
+        }
+        hide();
+    }
 
     window.DagWizard = { start: start };
 

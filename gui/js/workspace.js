@@ -43,6 +43,11 @@
 
     /** Parse + install model code, reporting a readable error if it is invalid. */
     function loadCode(code, sourceLabel) {
+        var ta = document.getElementById('adj_matrix');
+        if (ta && ta.classList.contains('dirty')) {
+            toast('Your model code has unapplied changes. Update or save that code before opening another diagram.', 'error');
+            return false;
+        }
         var g;
         if (!looksLikeModel(code)) {
             toast((sourceLabel || 'That file') + ' does not look like a DAGitty model. ' +
@@ -60,21 +65,23 @@
             toast((sourceLabel || 'That model') + ' contains no variables.', 'error');
             return false;
         }
-        var ta = document.getElementById('adj_matrix');
+        if (!g.hasCompleteLayout()) new GraphLayouter.Spring(g).layout();
         if (ta) { ta.value = code; ta.style.backgroundColor = ''; ta.classList.remove('dirty'); }
         displayHide('model_refresh');
-        if (!g.hasCompleteLayout()) new GraphLayouter.Spring(g).layout();
         DAGittyControl.setGraph(g);
         return true;
     }
 
+    var _fileEpoch = 0;
     function readModelFile(file) {
+        var epoch = ++_fileEpoch;
         var reader = new FileReader();
         reader.onload = function (e) {
+            if (epoch !== _fileEpoch) return;
             if (loadCode(String(e.target.result), '“' + file.name + '”'))
                 toast('Opened ' + file.name, 'ok');
         };
-        reader.onerror = function () { toast('Could not read ' + file.name + '.', 'error'); };
+        reader.onerror = function () { if (epoch === _fileEpoch) toast('Could not read ' + file.name + '.', 'error'); };
         reader.readAsText(file);
     }
 
@@ -110,6 +117,11 @@
     }
 
     function shareLink() {
+        var ta = document.getElementById('adj_matrix');
+        if (ta && ta.classList.contains('dirty')) {
+            toast('Your model code has unapplied changes. Update the diagram before copying its shareable link.', 'error');
+            return;
+        }
         var code = (window.Model && Model.dag) ? Model.dag.toString() : '';
         if (!code) { toast('Nothing to share yet.', 'error'); return; }
         var url = location.origin + location.pathname + '#dag=' + encodeModel(code);
@@ -143,22 +155,31 @@
     // "restored your work" even if they never touched anything, so only real
     // edits are saved.
     var _baseline = null;
+    var _hasEdits = false;
 
     function resetBaseline() {
         _baseline = (window.Model && Model.dag) ? Model.dag.toString() : null;
+        _hasEdits = false;
     }
 
     function autosave() {
         if (!window.Model || !Model.dag) return;
+        if (Model.dag.toString() !== _baseline) _hasEdits = true;
         if (_saveTimer) clearTimeout(_saveTimer);
-        _saveTimer = setTimeout(function () {
-            _saveTimer = null;
-            var code = Model.dag.toString();
-            if (code === _baseline) return;
-            try {
-                localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ code: code, ts: Date.now() }));
-            } catch (e) { /* private mode / quota — autosave is best-effort */ }
-        }, AUTOSAVE_MS);
+        _saveTimer = setTimeout(flushAutosave, AUTOSAVE_MS);
+    }
+
+    function flushAutosave() {
+        if (_saveTimer) clearTimeout(_saveTimer);
+        _saveTimer = null;
+        if (!window.Model || !Model.dag) return;
+        var code = Model.dag.toString();
+        // Once an edit has happened, returning to the starting graph (Undo)
+        // must replace the saved edited graph as well.
+        if (!_hasEdits && code === _baseline) return;
+        try {
+            localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ code: code, ts: Date.now() }));
+        } catch (e) { /* private mode / quota — autosave is best-effort */ }
     }
 
     function readAutosave() {
@@ -346,10 +367,12 @@
         initDragDrop();
         if (_baseline === null) resetBaseline();   // the built-in example, unless…
         maybeRestore();                            // …a link or saved session replaces it
-        if (window.DAGittyControl) DAGittyControl.observe('graphchange', function (g) {
-            syncHash(g.toString());
-            autosave();
-        });
+        if (window.DAGittyControl) {
+            var changed = function (g) { syncHash(g.toString()); autosave(); };
+            DAGittyControl.observe('graphchange', changed);
+            DAGittyControl.observe('graphlayoutchange', changed);
+        }
+        window.addEventListener('pagehide', flushAutosave);
 
         // Pasting a share link into a tab that already has DAGitty open only
         // changes the fragment — the browser does not reload, so nothing would

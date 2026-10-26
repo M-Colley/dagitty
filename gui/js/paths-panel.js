@@ -44,7 +44,7 @@
     function walk(pg, sourceIds) {
         var edges = pg.getEdges();
         if (!edges.length) return null;
-        var adj = {};
+        var adj = Object.create(null);
         edges.forEach(function (e) {
             (adj[e.v1.id] = adj[e.v1.id] || []).push(e);
             (adj[e.v2.id] = adj[e.v2.id] || []).push(e);
@@ -87,7 +87,8 @@
             var inFromLeft  = steps[i - 1] === '->' || steps[i - 1] === '<->';
             var inFromRight = steps[i]     === '<-' || steps[i]     === '<->';
             if (inFromLeft && inFromRight) {                       // collider
-                if (has(ctx.anZ, n)) openers.push({ node: n, viaDescendant: !has(ctx.Z, n) });
+                if (has(ctx.anZ, n)) openers.push({ node: n, viaDescendant: !has(ctx.Z, n),
+                    conditioned: has(ctx.Z, n) ? [n] : ctx.Z.filter(function (z) { return has(ctx.ancestors[z], n); }) });
                 else blockers.push({ node: n, collider: true });
             } else {                                               // non-collider
                 if (has(ctx.Z, n)) blockers.push({ node: n, collider: false, selected: has(ctx.selected, n) && !has(ctx.adjusted, n) });
@@ -101,8 +102,12 @@
         if (causal) {
             if (open) {
                 if (ctx.wantDirect && mediators.length) {
+                    var measured = mediators.filter(function (m) { return !has(ctx.latent, m); });
                     explanation = 'Causal path through ' + list(mediators) + ' — an indirect effect. For the ' +
-                        'direct effect this path must be blocked: adjust for one of ' + list(mediators) + '.';
+                        'direct effect this path must be blocked. ' + (measured.length
+                            ? 'Check the Causal-effect panel for a sufficient set; a measured variable on this path ' +
+                              '(' + list(measured) + ') would block this path alone.'
+                            : 'Every mediator on this path is unobserved, so it cannot be blocked by measured-variable adjustment.');
                 } else if (mediators.length) {
                     explanation = 'Causal path — part of the effect you want to estimate, running through ' +
                         list(mediators) + '. Leave it open.';
@@ -111,7 +116,13 @@
                 }
             } else {
                 var meds = blockers.map(function (b) { return b.node; });
-                explanation = ctx.wantDirect
+                var selectedMeds = blockers.filter(function (b) { return b.selected; }).map(function (b) { return b.node; });
+                explanation = selectedMeds.length
+                    ? 'Blocked by sample selection on ' + list(selectedMeds) + ', a mediator on this causal path. ' +
+                      (ctx.wantDirect ? 'DAGitty does not support direct-effect adjustment analysis with selection nodes.'
+                          : 'For the total effect this removes part of the causal pathway. Review the selection mechanism; ' +
+                            'changing adjustment controls alone may not recover the target effect.')
+                    : ctx.wantDirect
                     ? 'Blocked by adjusting for ' + list(meds) + ' — intended when estimating a direct effect.'
                     : 'Blocked because you adjusted for ' + list(meds) + ', a mediator. For the total effect this ' +
                       'removes part of the very effect you are measuring — leave ' + list(meds) + ' unadjusted.';
@@ -119,13 +130,18 @@
         } else if (open) {
             if (openers.length) {
                 var o = openers[0];
-                explanation = 'Open because you ' + (has(ctx.adjusted, o.node) || o.viaDescendant ? 'adjusted for' : 'selected on') +
-                    ' ' + o.node + (o.viaDescendant ? ' (or something it causes)' : '') + ', a collider on this path. ' +
-                    'Conditioning on a collider lets association flow through it. Remove that ' +
-                    (has(ctx.selected, o.node) ? 'selection' : 'adjustment') + ' to close this path.';
+                explanation = o.viaDescendant
+                    ? 'Open because conditioning on ' + list(o.conditioned) + ' activates ' + o.node +
+                      ', a collider on this path, through its descendant' + (o.conditioned.length > 1 ? 's' : '') + '. '
+                    : 'Open because you ' + (has(ctx.adjusted, o.node) ? 'adjusted for' : 'selected on') +
+                      ' ' + o.node + ', a collider on this path. ';
+                explanation += 'Conditioning on a collider or its descendants can open a biasing path. ' +
+                    'Review the sufficient sets in the Causal-effect panel; sample selection may require a change ' +
+                    'to study design or analysis rather than unticking a variable.';
             } else if (candidates.length) {
-                explanation = 'Open: nothing on it is adjusted for. Adjusting for ' + list(candidates) +
-                    ' would block it (the Causal-effect panel lists the combinations that block every path).';
+                explanation = 'Open: no conditioned non-collider blocks it. Adjusting for a non-collider on this path (' +
+                    list(candidates) + ') would block this path alone. Use a sufficient set from the Causal-effect ' +
+                    'panel: a variable that blocks one path can open another or remove part of the causal effect.';
             } else {
                 explanation = 'Open, and every variable on it is unobserved — it cannot be blocked by adjustment. ' +
                     'This is an unmeasured confounding path.';
@@ -161,14 +177,22 @@
         var X = g.getSources(), Y = g.getTargets();
         if (!X.length || !Y.length) return null;
         if (GraphAnalyzer.containsCycle(g)) return { cyclic: true, paths: [], truncated: false, openBiasing: 0 };
+        if (g.getEdges().some(function (e) {
+            return e.directed !== Graph.Edgetype.Directed && e.directed !== Graph.Edgetype.Bidirected;
+        })) {
+            return { cyclic: false, uncertain: true, partial: g.getType() === 'pdag',
+                paths: [], truncated: false, openBiasing: 0 };
+        }
 
         var adjusted = ids(g.getAdjustedNodes());
         var selected = ids(g.getSelectedNodes());
         var Z = _.union(adjusted, selected);
         var anZ = Z.length ? _.union(Z, ids(g.ancestorsOf(g.getVertex(Z)))) : [];
+        var ancestors = Object.create(null);
+        Z.forEach(function (z) { ancestors[z] = ids(g.ancestorsOf([g.getVertex(z)])); });
         var ctx = {
             Z: Z, anZ: anZ, adjusted: adjusted, selected: selected,
-            latent: ids(g.getLatentNodes()), wantDirect: kind === 'direct'
+            ancestors: ancestors, latent: ids(g.getLatentNodes()), wantDirect: kind === 'direct'
         };
 
         var pgs = GraphAnalyzer.listPaths(g, false, LIMIT + 1, X, Y);
@@ -266,6 +290,15 @@
             if (badge) badge.style.display = 'none';
             return;
         }
+        if (res.uncertain) {
+            hint(res.partial ? 'Some arrows have unresolved direction. Open/blocked path explanations depend on those directions, ' +
+                'so review and orient the undirected edges before using this panel. The Causal-effect panel can ' +
+                'assess adjustment across compatible DAGs where supported.' :
+                'This panel does not classify the edge types in this graph. Use the Causal-effect panel for ' +
+                'identification where supported. Undirected edges in a MAG can represent selection rather than unknown direction.');
+            if (badge) badge.style.display = 'none';
+            return;
+        }
         if (!res.paths.length) {
             hint('There is no path of any kind between the exposure and the outcome.');
             if (badge) badge.style.display = 'none';
@@ -277,8 +310,11 @@
             badge.style.display = res.openBiasing ? '' : 'none';
         }
 
-        hint('Every path between exposure and outcome. Hover or focus one to see it on the canvas. ' +
-             'Causal paths should stay open; biasing paths must all be blocked.');
+        hint('Paths between exposure and outcome. Hover or focus one to see it on the canvas. ' +
+             (currentKind() === 'direct'
+                ? 'For a direct effect, keep the direct arrow open and block indirect and biasing paths. '
+                : 'For a total effect, causal paths should stay open and biasing paths must all be blocked. ') +
+             'Use the Causal-effect panel to assess the whole adjustment set.');
 
         var ul = document.createElement('ul');
         ul.className = 'paths-list';

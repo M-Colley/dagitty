@@ -43,8 +43,9 @@
         {
             target: '#causal_effect_block',
             title: 'What must you control for?',
-            body: 'The payoff: once you set an exposure and outcome, DAGitty tells you exactly which variables you must ' +
-                  '<strong>adjust for</strong> to estimate the effect without bias — and whether your current choice works.'
+            body: 'Once you set an exposure and outcome, DAGitty checks which variables are sufficient to ' +
+                  '<strong>adjust for</strong> under your diagram, and whether your current choice works. ' +
+                  'The answer depends on the causal assumptions you draw; it does not verify those assumptions.'
         },
         {
             target: '#testable_implications',
@@ -64,7 +65,7 @@
             body: 'Your model is plain text. <strong>Download</strong> it here and reopen it later with ' +
                   '<em>Model → Open model file…</em> (or just drag the file onto the page). ' +
                   '<em>Model → Copy shareable link</em> packs the whole diagram into a URL — nothing is uploaded anywhere. ' +
-                  'Your work is also saved in this browser automatically, so a reload will not lose it.'
+                  'Browser autosave can also restore your diagram when storage is available. Download a copy for a durable record.'
         },
         {
             target: '#btn-beginner-mode',

@@ -8192,13 +8192,12 @@ var DAGittyGraphView = Class.extend({
 		this.coordinate_system_valid = b
 	},
 	initializeCoordinateSystem : function( g ){
-		var bb = g.getBoundingBox()
+		var bb = g.getBoundingBox(), vv = g.getVertices()
 		if( bb ){
 			this.bounds = [bb[0],bb[2],bb[1],bb[3]]
 		} else {
 			if( this.isCoordinateSystemValid() ){ return }
 			var min_x = Infinity, max_x = -Infinity, min_y = Infinity, max_y = -Infinity
-			var vv = g.getVertices()
 			for( var i = 0 ; i < vv.length ; i ++ ){
 				min_x = vv[i].layout_pos_x < min_x ? vv[i].layout_pos_x : min_x
 				min_y = vv[i].layout_pos_y < min_y ? vv[i].layout_pos_y : min_y
@@ -8210,6 +8209,50 @@ var DAGittyGraphView = Class.extend({
 			var xpad=50/this.width*(max_x-min_x)
 			var ypad=80/this.height*(max_y-min_y)
 			this.bounds = [min_x-xpad,max_x+xpad,min_y-ypad,max_y+ypad]
+		}
+		// Model bounds describe node centres, not the labels around them. Keep
+		// broad explicit bounds, but expand the view when a label would otherwise
+		// be clipped (especially after resizing to a phone-width canvas). This
+		// changes only the screen transform, never model coordinates or its bb.
+		if( vv.length && this.width > 0 && isFinite(this.bounds[0]) && isFinite(this.bounds[1]) ){
+			var fontSize = 16, font = "16px Arial, sans-serif", ctx = null, sample = null
+			try {
+				var svg = this.impl && this.impl.svg
+				if( svg ){
+					sample = document.createElementNS("http://www.w3.org/2000/svg", "text")
+					sample.setAttribute("class", "nodelabel")
+					sample.textContent = "M"
+					svg.appendChild(sample)
+					var style = getComputedStyle(sample)
+					fontSize = parseFloat(style.fontSize) || fontSize
+					font = style.font || ((style.fontStyle || "normal") + " " +
+						(style.fontWeight || "normal") + " " + fontSize + "px " + (style.fontFamily || "Arial, sans-serif"))
+				}
+				ctx = document.createElement("canvas").getContext("2d")
+				if( ctx ) ctx.font = font
+			} catch( e ) { ctx = null }
+			finally { if( sample && sample.parentNode ) sample.parentNode.removeChild(sample) }
+			var centre = (this.bounds[0] + this.bounds[1]) / 2
+			var span = this.bounds[1] - this.bounds[0]
+			for( var j = 0 ; j < vv.length ; j ++ ){
+				var labelWidth = vv[j].id.length * fontSize
+				if( ctx ){
+					try {
+						var metrics = ctx.measureText(vv[j].id)
+						if( isFinite(metrics.width) ) labelWidth = Math.max(metrics.width,
+							(metrics.actualBoundingBoxLeft || 0) + (metrics.actualBoundingBoxRight || 0))
+					} catch( e ) { /* conservative character-width fallback */ }
+				}
+				var halfWidth = Math.max(24, labelWidth / 2 + 8)
+				// An individual label wider than the viewport cannot be made to fit
+				// by moving centres; keep the transform finite in that case.
+				var available = Math.max(this.width * 0.05, this.width / 2 - halfWidth - 8)
+				span = Math.max(span, Math.abs(vv[j].layout_pos_x - centre) * this.width / available)
+			}
+			if( isFinite(span) && span > 0 ){
+				this.bounds[0] = centre - span / 2
+				this.bounds[1] = centre + span / 2
+			}
 		}
 		this.setCoordinateSystemValid( true )
 	},

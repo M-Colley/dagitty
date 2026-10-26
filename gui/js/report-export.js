@@ -45,13 +45,19 @@
         var adjustment = null;
         if (exposure.length && outcome.length && !cyclic && kind !== 'instrument') {
             var sufficient = null;
+            var isOdds = kind === 'adj_causalodds';
+            var supported = !(kind === 'adj_direct' && (selected.length || g.getType() !== 'dag')) &&
+                !(isOdds && (g.getType() !== 'dag' || exposure.length !== 1 || outcome.length !== 1 || selected.length !== 1));
             try {
-                sufficient = msasKind === 'direct' ? GraphAnalyzer.isAdjustmentSetDirectEffect(g) : GraphAnalyzer.isAdjustmentSet(g);
+                if (supported) sufficient = isOdds ? GraphAnalyzer.isAdjustmentSetCausalOddsRatio(g)
+                    : msasKind === 'direct' ? GraphAnalyzer.isAdjustmentSetDirectEffect(g) : GraphAnalyzer.isAdjustmentSet(g);
             } catch (e) { sufficient = null; }
             adjustment = {
                 chosen: adjusted,
                 sufficient: sufficient,
-                minimalSets: window.AdjustmentSets ? AdjustmentSets.minimal(g, msasKind) : null
+                criterion: isOdds ? 'causal odds ratio' : msasKind + ' effect',
+                supported: supported,
+                minimalSets: supported && !isOdds && window.AdjustmentSets ? AdjustmentSets.minimal(g, msasKind) : null
             };
         }
 
@@ -73,6 +79,8 @@
             var pr = Paths.analyse(g, msasKind);
             if (pr && !pr.cyclic) {
                 paths = {
+                    uncertain: !!pr.uncertain,
+                    partial: !!pr.partial,
                     truncated: pr.truncated,
                     list: pr.paths.map(function (p) {
                         return { path: p.text, causal: p.causal, open: p.open, explanation: p.explanation };
@@ -83,7 +91,8 @@
 
         var modelCode = g.toString();
         var localTests = null;
-        if (window.LocalTests && LocalTests.last && LocalTests.last.modelCode === modelCode) {
+        if (window.LocalTests && LocalTests.last && (LocalTests.matchesModel
+                ? LocalTests.matchesModel(LocalTests.last, g) : LocalTests.last.modelCode === modelCode)) {
             var lt = LocalTests.last;
             localTests = {
                 data: lt.dataLabel || null,
@@ -112,7 +121,8 @@
             implications: { capped: implCapped, list: implications },
             localTests: localTests,
             methodsStatement: window.MethodsExport ? MethodsExport.generate() : null,
-            rCode: 'library(dagitty)\ng <- dagitty(\'' + rstr + '\')\nplot(g)\nadjustmentSets(g)\nimpliedConditionalIndependencies(g)\n# localTests(g, data = your_data)'
+            rCode: window.RCodeExport ? window.RCodeExport.generate(g) :
+                'library(dagitty)\ng <- dagitty(\'' + rstr + '\')\nplot(g)\nadjustmentSets(g)\nimpliedConditionalIndependencies(g)\n# localTests(g, data = your_data)'
         };
     }
 
@@ -151,7 +161,7 @@
         h.push('<p class="meta">Generated ' + esc(when.toLocaleString()) + ' with ' + esc(d.generator) +
             '. Everything below is derived from the diagram; the machine-readable version is embedded at the end of this file.</p>');
 
-        if (svgMarkup) h.push('<figure>' + svgMarkup + '<figcaption class="muted small">Boxes: conditioned on (adjusted / selection). Dashed: unobserved.</figcaption></figure>');
+        if (svgMarkup) h.push('<figure>' + svgMarkup + '<figcaption class="muted small">Figure styling follows the publication export settings. Variable roles are listed below.</figcaption></figure>');
 
         h.push('<h2>Variables</h2><table><tbody>' +
             roleRow('Exposure (cause)', d.roles.exposure) + roleRow('Outcome (effect)', d.roles.outcome) +
@@ -167,11 +177,12 @@
             h.push('<p>Target: <strong>' + esc(d.estimand.label) + '</strong>.</p>');
             if (d.adjustment) {
                 var a = d.adjustment;
+                if (a.supported === false) h.push('<p class="warn">This graph or selection setup is not supported for the chosen strategy. See the assumptions statement for the requirements.</p>');
                 h.push('<table><tbody>' +
                     '<tr><th scope="row">Adjustment set chosen</th><td>' + (a.chosen.length ? '{' + esc(a.chosen.join(', ')) + '}' : '∅ (none)') + '</td></tr>' +
                     '<tr><th scope="row">Sufficient?</th><td>' + (a.sufficient === null ? 'not computed' : a.sufficient
-                        ? '<span class="ok">Yes — blocks every biasing path under this diagram</span>'
-                        : '<span class="bad">No — a biasing path remains open (or is opened) under this diagram</span>') + '</td></tr>' +
+                        ? '<span class="ok">Yes — passes the ' + esc(a.criterion || 'adjustment') + ' criterion under this diagram</span>'
+                        : '<span class="bad">No — fails the ' + esc(a.criterion || 'adjustment') + ' criterion under this diagram</span>') + '</td></tr>' +
                     '<tr><th scope="row">Minimal sufficient sets</th><td>' + esc(setText(a.minimalSets)) + '</td></tr>' +
                     '</tbody></table>');
             }
@@ -183,7 +194,10 @@
 
         if (d.paths) {
             h.push('<h2>Paths between exposure and outcome</h2>');
-            if (!d.paths.list.length) h.push('<p class="muted">None.</p>');
+            if (d.paths.uncertain) h.push(d.paths.partial
+                ? '<p class="muted">Some edge directions are unresolved. Path classifications are deferred until the undirected relationships have been reviewed and oriented.</p>'
+                : '<p class="muted">This path panel does not classify the edge types in this graph. Use the identification results where supported.</p>');
+            else if (!d.paths.list.length) h.push('<p class="muted">None.</p>');
             else {
                 h.push('<table><thead><tr><th>Path</th><th>Kind</th><th>Status</th><th>Why</th></tr></thead><tbody>');
                 d.paths.list.forEach(function (p) {
@@ -217,7 +231,7 @@
                 else h.push('<tr><td class="path">' + esc(t.implication) + '</td><td>' + t.estimate.toFixed(2) + '</td><td>' +
                     t.ciLow.toFixed(2) + ' to ' + t.ciHigh.toFixed(2) + '</td><td>' + (t.p < 0.001 ? '&lt; .001' : t.p.toFixed(3)) + '</td><td>' +
                     (t.pHolm < 0.001 ? '&lt; .001' : t.pHolm.toFixed(3)) + '</td><td>' + t.n + '</td><td class="' + (t.violated ? 'bad' : 'ok') + '">' +
-                    (t.violated ? 'violated' : 'consistent') + '</td></tr>');
+                    (t.violated ? 'rejected (raw p)' : 'not rejected') + '</td></tr>');
             });
             h.push('</tbody></table>');
         }

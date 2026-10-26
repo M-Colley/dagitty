@@ -71,20 +71,24 @@
         var adjusted  = ids(g.getAdjustedNodes());
         var selected  = ids(g.getSelectedNodes ? g.getSelectedNodes() : []);
         var latent    = ids(g.getLatentNodes());
+        var unresolved = g.getType() === 'pdag' && g.getEdges().some(function (e) { return e.directed === Graph.Edgetype.Undirected; });
+        if (unresolved) out.push({ level: 'info', text: 'Undirected edges represent unresolved causal direction. ' +
+            'Review them using subject-matter knowledge before interpreting paths or claiming that no causal effect exists.' });
 
         // ── Isolated variables ─────────────────────────────────────────────
         var isolated = [];
+        var incident = Object.create(null);
+        g.getEdges().forEach(function (e) { incident[e.v1.id] = incident[e.v2.id] = true; });
         verts.forEach(function (v) {
-            if (v.getParents().length === 0 && v.getChildren().length === 0 &&
-                v.getNeighbours().length === 0) isolated.push(v.id);
+            if (!incident[v.id]) isolated.push(v.id);
         });
         if (isolated.length) {
             out.push({ level: 'warn', subject: list(isolated),
                 text: isolated.length === 1
-                    ? ' has no arrows, so it plays no part in the analysis. Connect it to the rest of ' +
-                      'the diagram, or remove it.'
-                    : ' have no arrows, so they play no part in the analysis. Connect them to the rest ' +
-                      'of the diagram, or remove them.' });
+                    ? ' has no arrows: the model assumes it is independent of the other variables. ' +
+                      'Keep it if that is intentional; otherwise add the relationships your subject knowledge supports.'
+                    : ' have no arrows: the model assumes they are independent of the other variables. ' +
+                      'Keep them if that is intentional; otherwise review the missing relationships.' });
         }
 
         // ── Roles not set yet ──────────────────────────────────────────────
@@ -109,11 +113,12 @@
             out.push({ level: 'error', subject: list(reversed),
                 text: ' is a consequence of ' + list(outcomes) + ' in this diagram, not a cause of it. ' +
                       'If you meant the opposite, the arrow between them is drawn the wrong way round.' });
-        } else if (!exposures.some(function (e) { return outcomes.some(function (o) { return has(descE, o); }); })) {
-            out.push({ level: 'warn',
+        } else if (!unresolved && !exposures.some(function (e) { return outcomes.some(function (o) { return has(descE, o); }); })) {
+            out.push({ level: 'info',
                 text: 'There is no directed path from ' + list(exposures) + ' to ' + list(outcomes) +
                       ', so as drawn your diagram says ' + list(exposures) + ' has no causal effect on ' +
-                      list(outcomes) + '. Add the arrows describing how one leads to the other.' });
+                      list(outcomes) + '. Keep this if a null causal effect is your assumption; otherwise ' +
+                      'review whether a plausible causal pathway is missing.' });
         }
 
         // ── Adjustment problems ────────────────────────────────────────────
@@ -166,9 +171,8 @@
             if (pair) {
                 out.push({ level: 'warn', subject: a,
                     text: ' is a common effect (a "collider") of ' + pair[0] + ' and ' + pair[1] +
-                          '. Controlling for it induces an association between those two that is not ' +
-                          'causal, which biases your estimate. Colliders should usually be left ' +
-                          'unadjusted.' });
+                          '. Controlling for it can open a biasing path between those causes. Other controls ' +
+                          'may block that path; check the Causal-effect panel for whether the entire set is sufficient.' });
             }
         });
 

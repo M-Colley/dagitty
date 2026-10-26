@@ -34,6 +34,7 @@
         },
 
         undo: function () {
+            if (window.modelCodeIsPending && modelCodeIsPending()) return;
             if (this.stack.length < 2) return;
             var current = this.stack.pop();
             this.future.push(current);
@@ -42,6 +43,7 @@
         },
 
         redo: function () {
+            if (window.modelCodeIsPending && modelCodeIsPending()) return;
             if (!this.future.length) return;
             var next = this.future.pop();
             this.stack.push(next);
@@ -64,10 +66,12 @@
     };
 
     function _loadCodeIntoCanvas(code) {
+        // Parse before touching the code editor so an invalid import cannot
+        // overwrite a draft while leaving the previous diagram on the canvas.
+        var g = GraphParser.parseGuess(code);
         var ta = document.getElementById('adj_matrix');
         if (ta) { ta.value = code; ta.style.backgroundColor = ''; ta.classList.remove('dirty'); }
         displayHide('model_refresh');
-        var g = GraphParser.parseGuess(code);
         if (!g.hasCompleteLayout()) {
             var lay = new GraphLayouter.Spring(g);
             lay.layout();
@@ -171,18 +175,18 @@
         // path (confounding) or a collider path the user's own adjustment
         // opened. The Diagram check and Paths panels name the mechanism.
         [/Biasing paths are open\./gi,
-         'A biasing path is open — a naive comparison will be biased.'],
+         'An unadjusted comparison is not sufficient for this analysis under the diagram.'],
         [/No open biasing paths\./gi,
-         'No biasing path is open — no adjustment needed.'],
+         'No control variables are needed for this analysis under the diagram.'],
         // \b is load-bearing: "Incorrectly adjusted." CONTAINS "correctly
         // adjusted.", so without it this rule fired inside the negative message
         // and turned it into "InYour chosen controls successfully block all
         // confounding." — telling the user their adjustment was fine at exactly
         // the moment it was not.
         [/\bCorrectly adjusted\./gi,
-         'Your chosen controls block every biasing path.'],
+         'Your chosen controls are sufficient for this analysis under the diagram.'],
         [/\bIncorrectly adjusted\./gi,
-         'Your chosen controls leave a biasing path open (or open one).'],
+         'Your chosen controls are not sufficient for this analysis under the diagram.'],
         [/No exposure defined\./gi,
          'Mark a variable as exposure first (click it, check "exposure").'],
         [/No outcome defined\./gi,
@@ -292,13 +296,13 @@
         COLLAPSED: ['model_data'],
 
         init: function () {
-            this.active = localStorage.getItem(this.KEY) === 'true';
+            try { this.active = localStorage.getItem(this.KEY) === 'true'; } catch (e) { this.active = false; }
             this._apply();
         },
 
         toggle: function () {
             this.active = !this.active;
-            localStorage.setItem(this.KEY, this.active);
+            try { localStorage.setItem(this.KEY, this.active); } catch (e) {}
             this._apply();
         },
 
@@ -306,7 +310,7 @@
             var btn = document.getElementById('btn-beginner-mode');
             if (this.active) {
                 document.body.classList.add('beginner-mode');
-                if (btn) { btn.textContent = 'Advanced mode'; btn.setAttribute('aria-pressed', 'true'); }
+                if (btn) { btn.textContent = 'Beginner mode'; btn.setAttribute('aria-pressed', 'true'); }
                 this.HIDDEN.forEach(function (id) {
                     var c = document.getElementById(id), h = _getSectionHeader(id);
                     if (c) c.style.display = 'none';
@@ -316,13 +320,17 @@
                 displayShow('quickstart');
             } else {
                 document.body.classList.remove('beginner-mode');
-                if (btn) { btn.textContent = 'Beginner mode'; btn.setAttribute('aria-pressed', 'false'); }
+                if (btn) { btn.textContent = 'Advanced mode'; btn.setAttribute('aria-pressed', 'false'); }
                 this.HIDDEN.forEach(function (id) {
                     var c = document.getElementById(id), h = _getSectionHeader(id);
                     if (c) c.style.display = 'block';
                     if (h) h.style.display = '';
                 });
                 this.COLLAPSED.forEach(function (id) { displayShow(id); });
+            }
+            if (btn) {
+                btn.setAttribute('aria-label', 'Beginner mode');
+                btn.title = this.active ? 'Beginner mode is on. Switch to advanced mode.' : 'Advanced mode is on. Switch to beginner mode.';
             }
         }
     };
@@ -334,6 +342,7 @@
 
     var ThemeToggle = {
         KEY: 'dagitty_theme',
+        _manual: false,
 
         current: function () {
             return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -342,6 +351,7 @@
         set: function (theme, persist) {
             document.documentElement.setAttribute('data-theme', theme);
             if (persist !== false) {
+                this._manual = true;
                 try { localStorage.setItem(this.KEY, theme); } catch (e) {}
             }
             this._sync();
@@ -360,6 +370,7 @@
             if (icon) icon.textContent = isDark ? '☀' : '🌙';
             if (label) label.textContent = isDark ? 'Light' : 'Dark';
             if (btn) btn.title = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+            if (btn) btn.setAttribute('aria-label', btn.title);
         },
 
         init: function () {
@@ -367,10 +378,11 @@
             // If the user has not made an explicit choice, keep following the OS.
             var stored;
             try { stored = localStorage.getItem(this.KEY); } catch (e) { stored = null; }
+            this._manual = stored === 'light' || stored === 'dark';
             if (stored !== 'light' && stored !== 'dark' && window.matchMedia) {
                 var mq = window.matchMedia('(prefers-color-scheme: dark)');
                 var self = this;
-                var onChange = function (e) { self.set(e.matches ? 'dark' : 'light', false); };
+                var onChange = function (e) { if (!self._manual) self.set(e.matches ? 'dark' : 'light', false); };
                 if (mq.addEventListener) mq.addEventListener('change', onChange);
                 else if (mq.addListener) mq.addListener(onChange);
             }
@@ -461,10 +473,24 @@
     window.DataModal = {
         _csvText: null,
         _resultCode: null,
+        _epoch: 0,
+
+        // Both a file read and the main-thread fallback can finish after Stop,
+        // a different upload, or closing the dialog. Ignore those old callbacks.
+        _invalidate: function () {
+            this._epoch++;
+            if (this._worker) { this._worker.terminate(); this._worker = null; }
+            this._resultCode = null;
+            document.getElementById('btn-import-dag').disabled = true;
+            document.getElementById('btn-download-model').style.display = 'none';
+            document.getElementById('btn-cancel-analysis').style.display = 'none';
+            document.getElementById('data-modal-preview').style.display = 'none';
+        },
 
         open: function () {
             var modal = document.getElementById('data-discovery-modal');
             if (!modal) return;
+            this._invalidate();
             this._csvText = null; this._resultCode = null;
             document.getElementById('data-csv-input').value = '';
             this._setStatus('', '');
@@ -482,11 +508,14 @@
             document.getElementById('btn-import-dag').disabled = true;
             modal.style.display = 'flex';
             modal.onclick = function (e) { if (e.target === modal) DataModal.close(); };
-            setTimeout(function () { var fi = document.getElementById('data-csv-input'); if (fi) fi.focus(); }, 50);
+            setTimeout(function () {
+                var fi = document.getElementById('data-csv-input');
+                if (fi && modal.style.display === 'flex') fi.focus();
+            }, 50);
         },
 
         close: function () {
-            if (this._worker) { this._worker.terminate(); this._worker = null; }
+            this._invalidate();
             var modal = document.getElementById('data-discovery-modal');
             if (modal) modal.style.display = 'none';
         },
@@ -495,12 +524,10 @@
         _onCsvReady: function (fileName, rowHint) {
             var self = this;
             var parsed;
-            try { parsed = CausalDiscovery.parseCSV(this._csvText); }
+            try { parsed = CausalDiscovery.parseCSV(this._csvText, null, true); }
             catch (e) {
-                // parseCSV can throw on truly bad files; show error and still enable run
-                this._setStatus('Loaded ' + fileName + ' (' + rowHint + ' rows). ' +
-                    'Warning: ' + e.message, 'warning');
-                document.getElementById('btn-run-analysis').disabled = false;
+                this._setStatus('Could not use ' + fileName + ': ' + e.message, 'error');
+                document.getElementById('btn-run-analysis').disabled = true;
                 return;
             }
             this._showVarSelect(parsed);
@@ -545,6 +572,7 @@
 
         handleFile: function (file) {
             if (!file) return;
+            this._invalidate();
             this._csvText = null; this._resultCode = null;
             document.getElementById('btn-run-analysis').disabled = true;
             document.getElementById('btn-import-dag').disabled = true;
@@ -553,12 +581,13 @@
             var dl = document.getElementById('btn-download-model');
             if (dl) dl.style.display = 'none';
 
-            var self = this;
+            var self = this, epoch = this._epoch;
             TabularFile.read(file, function (err, res) {
+                if (epoch !== self._epoch) return;
                 if (err) { self._setStatus(err.message, 'error'); return; }
                 self._csvText = res.text;
                 self._onCsvReady(res.label, res.rows);
-            }, function (status) { self._setStatus(status, 'running'); });
+            }, function (status) { if (epoch === self._epoch) self._setStatus(status, 'running'); });
         },
 
         _worker: null,
@@ -570,7 +599,7 @@
             var msg = 'Found ' + result.edgeCount + ' edge(s) among ' +
                 result.nodeCount + ' variables (' + result.n + ' observations).';
             if (result.undirectedCount > 0)
-                msg += ' ' + result.undirectedCount + ' edge(s) shown as \u2194 (direction ambiguous).';
+                msg += ' ' + result.undirectedCount + ' connection(s) shown as — (direction unresolved; review before causal interpretation).';
 
             this._setStatus(msg, 'success');
             this._showPreview(result);
@@ -595,21 +624,22 @@
         },
 
         /** Fallback: run on main thread if Web Worker is unavailable. */
-        _runOnMainThread: function (csvText, alpha, useLingam, opts) {
+        _runOnMainThread: function (csvText, alpha, useLingam, opts, epoch) {
             var self = this;
             CausalDiscovery.discoverFromCSVAsync(
                 csvText, alpha, useLingam,
-                function (pct, label) { self._setProgress(pct, label); },
+                function (pct, label) { if (epoch === self._epoch) self._setProgress(pct, label); },
                 opts
             ).then(function (result) {
-                self._handleResult(result);
+                if (epoch === self._epoch) self._handleResult(result);
             }).catch(function (err) {
-                self._handleError(err.message);
+                if (epoch === self._epoch) self._handleError(err.message);
             });
         },
 
         runAnalysis: function () {
             if (!this._csvText) return;
+            this._invalidate();
             var alpha     = parseFloat(document.getElementById('data-alpha').value) || 0.05;
             var useLingam = document.getElementById('data-use-lingam').checked;
             var speedEl   = document.getElementById('data-speed');
@@ -626,12 +656,13 @@
             }
             if (excludeVars.length) opts.excludeVars = excludeVars;
 
-            var self = this;
+            var self = this, epoch = this._epoch;
 
             document.getElementById('btn-run-analysis').disabled = true;
             document.getElementById('btn-import-dag').disabled   = true;
             document.getElementById('btn-download-model').style.display = 'none';
             this._setProgress(0, 'Starting\u2026');
+            document.getElementById('btn-cancel-analysis').style.display = '';
 
             // Prefer Web Worker (keeps UI fully responsive); fall back to main thread
             if (typeof Worker !== 'undefined') {
@@ -644,20 +675,22 @@
                     this._worker = new Worker(tag ? tag.getAttribute('src') : 'js/causal-discovery.js');
                 } catch (e) {
                     this._worker = null;
-                    this._runOnMainThread(this._csvText, alpha, useLingam, opts);
+                    this._runOnMainThread(this._csvText, alpha, useLingam, opts, epoch);
                     return;
                 }
                 var w = this._worker;
                 w.onmessage = function (e) {
+                    if (epoch !== self._epoch) return;
                     var msg = e.data;
                     if (msg.type === 'progress') self._setProgress(msg.pct, msg.label);
-                    else if (msg.type === 'done')  { self._worker = null; self._handleResult(msg.result); }
-                    else if (msg.type === 'error') { self._worker = null; self._handleError(msg.message); }
+                    else if (msg.type === 'done')  { w.terminate(); self._worker = null; self._handleResult(msg.result); }
+                    else if (msg.type === 'error') { w.terminate(); self._worker = null; self._handleError(msg.message); }
                 };
                 w.onerror = function () {
+                    if (epoch !== self._epoch) return;
                     // Worker failed (CORS, CSP, etc.) — fall back to main thread
-                    self._worker = null;
-                    self._runOnMainThread(self._csvText, alpha, useLingam, opts);
+                    w.terminate(); self._worker = null;
+                    self._runOnMainThread(self._csvText, alpha, useLingam, opts, epoch);
                 };
                 w.postMessage({
                     type:      'analyze',
@@ -666,17 +699,13 @@
                     useLingam: useLingam,
                     opts:      opts
                 });
-                document.getElementById('btn-cancel-analysis').style.display = '';
             } else {
-                this._runOnMainThread(this._csvText, alpha, useLingam, opts);
+                this._runOnMainThread(this._csvText, alpha, useLingam, opts, epoch);
             }
         },
 
         cancelAnalysis: function () {
-            if (this._worker) {
-                this._worker.terminate();
-                this._worker = null;
-            }
+            this._invalidate();
             this._setStatus('Analysis cancelled.', 'warning');
             document.getElementById('btn-run-analysis').disabled = false;
             document.getElementById('btn-cancel-analysis').style.display = 'none';
@@ -684,9 +713,17 @@
 
         importDAG: function () {
             if (!this._resultCode) return;
-            _loadCodeIntoCanvas(this._resultCode);
+            var ta = document.getElementById('adj_matrix');
+            if (ta && ta.classList.contains('dirty')) {
+                this._setStatus('Your model code has unapplied changes. Apply or save that code before importing this graph.', 'warning');
+                return;
+            }
+            try { _loadCodeIntoCanvas(this._resultCode); }
+            catch (e) {
+                this._setStatus('Could not import this graph. Check that column names are supported by DAGitty; download the suggested code to review it.', 'error');
+                return;
+            }
             this.close();
-            if (window.generateSpringLayout) generateSpringLayout();
         },
 
         downloadModel: function () {
@@ -728,7 +765,7 @@
             content.innerHTML = '';
 
             // Build variable-index lookup for correlation strengths
-            var varIdx = {};
+            var varIdx = Object.create(null);
             if (result.vars) {
                 result.vars.forEach(function (v, i) { varIdx[v] = i; });
             }
@@ -743,45 +780,45 @@
                 strong.textContent = result.causalOrder.join(' → ');
                 ord.appendChild(strong);
                 ord.title = 'DirectLiNGAM ranks the variables from most to least exogenous. ' +
-                    'Anything that looks backwards here is a sign the assumptions ' +
-                    '(linearity, non-Gaussian noise, no unmeasured confounding) do not hold.';
+                    'An unexpected order may reflect sampling error, algorithm limitations, or violations of ' +
+                    'linearity, non-Gaussian independent errors, or no unmeasured confounding. It is not proof of causal order.';
                 content.appendChild(ord);
             }
 
-            var edges = result.modelCode.split('\n').filter(function (l) {
-                return l.indexOf('->') !== -1 || l.indexOf('<->') !== -1;
-            });
+            var edges;
+            try { edges = GraphParser.parseGuess(result.modelCode).getEdges(); }
+            catch (e) {
+                content.textContent = 'Could not preview this graph. Download the model code to review the variable names and syntax.';
+                preview.style.display = 'block';
+                return;
+            }
 
             if (!edges.length) {
                 var empty = document.createElement('p');
                 empty.style.color = 'var(--muted)';
                 empty.style.fontSize = '12px';
-                empty.textContent = 'No edges found \u2014 try a less strict significance level.';
+                empty.textContent = 'No connections retained at these settings. Review the sample size, assumptions and settings before interpreting this result.';
                 content.appendChild(empty);
             } else {
-                edges.forEach(function (line) {
-                    line = line.trim();
+                edges.forEach(function (edge) {
                     var d = document.createElement('div');
                     d.className = 'modal-preview-edge';
-
-                    // Extract variable names from "A -> B" or "A <-> B".
-                    // Sources may be quoted ("my var") or bare; a lazy source
-                    // token keeps "->"/"<->" from being swallowed into the name.
-                    var m = line.match(/^\s*(?:"([^"]+)"|([^\s"]+?))\s*(->|<->)\s*(?:"([^"]+)"|([^\s"[]+))/);
+                    var arrow = edge.directed === Graph.Edgetype.Undirected ? ' — ' :
+                        edge.directed === Graph.Edgetype.Bidirected ? ' ↔ ' : ' → ';
+                    d.appendChild(document.createTextNode(edge.v1.id + arrow + edge.v2.id));
                     var badge = '';
-                    if (m && result.corrMat && result.vars) {
-                        var a = (m[1] || m[2]).trim(), b = (m[4] || m[5]).trim();
-                        var ai = varIdx[a], bi = varIdx[b];
+                    if (result.corrMat && result.vars) {
+                        var ai = varIdx[edge.v1.id], bi = varIdx[edge.v2.id];
                         if (ai !== undefined && bi !== undefined) {
                             var r = Math.abs(result.corrMat[ai][bi]);
-                            var cls = r >= 0.5 ? 'strong' : r >= 0.3 ? 'moderate' : 'weak';
-                            var lbl = r >= 0.5 ? 'strong' : r >= 0.3 ? 'moderate' : 'weak';
-                            badge = '<span class="edge-strength ' + cls + '" title="|r| = ' +
-                                r.toFixed(2) + '">' + lbl + '</span>';
+                            if (isFinite(r)) {
+                                var cls = r >= 0.5 ? 'strong' : r >= 0.3 ? 'moderate' : 'weak';
+                                badge = '<span class="edge-strength ' + cls + '" title="|r| = ' +
+                                    r.toFixed(2) + ' (pairwise correlation, not a causal effect)">|r| = ' + r.toFixed(2) + '</span>';
+                            }
                         }
                     }
-
-                    d.innerHTML = _escHtml(line) + badge;
+                    if (badge) d.insertAdjacentHTML('beforeend', badge);
                     content.appendChild(d);
                 });
             }
@@ -869,12 +906,19 @@
     // styled popover shown on hover and keyboard focus.
 
     function initTooltips() {
-        var tip = null;
+        var tip = null, owner = null, hideTimer = null;
+        function keep() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
+        function hideSoon() { keep(); hideTimer = setTimeout(hide, 150); }
         function ensure() {
             if (!tip) {
                 tip = document.createElement('div');
                 tip.className = 'app-tooltip';
+                tip.id = 'dagitty-help-tooltip';
                 tip.setAttribute('role', 'tooltip');
+                tip.addEventListener('mouseenter', keep);
+                tip.addEventListener('mouseleave', function () {
+                    if (document.activeElement !== owner) hide();
+                });
                 document.body.appendChild(tip);
             }
             return tip;
@@ -887,14 +931,21 @@
                 el.removeAttribute('title');           // suppress the native tooltip
                 if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', t);
                 if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+                el.setAttribute('role', 'button');
                 return t;
             }
             return '';
         }
         function show(el) {
+            keep();
             var txt = textFor(el);
             if (!txt) return;
+            if (owner && owner !== el) hide();
+            owner = el;
             var t = ensure();
+            var ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+            if (ids.indexOf(t.id) < 0) ids.push(t.id);
+            el.setAttribute('aria-describedby', ids.join(' '));
             t.textContent = txt;
             t.style.display = 'block';
             t.style.left = '0'; t.style.top = '0';
@@ -903,10 +954,19 @@
             var top = r.bottom + gap;
             if (top + th > window.innerHeight - 4) top = r.top - gap - th;
             left = Math.max(6, Math.min(left, window.innerWidth - tw - 6));
-            t.style.left = left + 'px'; t.style.top = top + 'px';
+            t.style.left = left + 'px'; t.style.top = Math.max(6, top) + 'px';
             t.classList.add('on');
         }
-        function hide() { if (tip) { tip.classList.remove('on'); tip.style.display = 'none'; } }
+        function hide() {
+            keep();
+            if (owner && tip) {
+                var ids = (owner.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (id) { return id && id !== tip.id; });
+                if (ids.length) owner.setAttribute('aria-describedby', ids.join(' '));
+                else owner.removeAttribute('aria-describedby');
+            }
+            owner = null;
+            if (tip) { tip.classList.remove('on'); tip.style.display = 'none'; }
+        }
 
         var sel = '.help-tip';
         // Several badges sit inside a collapsible <h3>, whose inline onclick
@@ -916,26 +976,105 @@
         document.addEventListener('click', function (e) {
             var el = e.target.closest && e.target.closest(sel);
             if (el) { e.stopPropagation(); e.preventDefault(); show(el); }
+            else if (!tip || !tip.contains(e.target)) hide();
         }, true);
         document.addEventListener('mouseover', function (e) { var el = e.target.closest && e.target.closest(sel); if (el) show(el); });
-        document.addEventListener('mouseout',  function (e) { var el = e.target.closest && e.target.closest(sel); if (el) hide(); });
+        document.addEventListener('mouseout', function (e) {
+            var el = e.target.closest && e.target.closest(sel);
+            if (el && document.activeElement !== el && (!tip || !tip.contains(e.relatedTarget))) hideSoon();
+        });
         document.addEventListener('focusin',   function (e) { var el = e.target.closest && e.target.closest(sel); if (el) show(el); });
         document.addEventListener('focusout',  function (e) { var el = e.target.closest && e.target.closest(sel); if (el) hide(); });
-        document.addEventListener('keydown',   function (e) { if (e.key === 'Escape') hide(); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && owner) { e.preventDefault(); e.stopImmediatePropagation(); hide(); return; }
+            var el = e.target.closest && e.target.closest(sel);
+            if (el && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault(); e.stopImmediatePropagation(); show(el);
+            }
+        }, true);
+        window.addEventListener('resize', hide);
+        document.addEventListener('scroll', function (e) {
+            if (!tip || !tip.contains(e.target)) hide();
+        }, true);
 
         // Pre-convert existing badges so the native tooltip never appears and
         // they're keyboard-focusable.
         document.querySelectorAll('.help-tip[title]').forEach(textFor);
+        new window.MutationObserver(function () {
+            document.querySelectorAll('.help-tip[title]').forEach(textFor);
+        }).observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Keep keyboard focus inside each modal, including dialogs created later by
+    // the wizard, tests and list editor. Closing returns to the opening control.
+    function initModalKeyboard() {
+        var active = null, opener = null, fallback = null, lastOutside = document.activeElement;
+        function visible(el) { return !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden'); }
+        function current() {
+            return Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).filter(visible).pop() || null;
+        }
+        function items(modal) {
+            return Array.from(modal.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')).filter(function (el) {
+                return !el.disabled && el.tabIndex >= 0 && visible(el);
+            });
+        }
+        function focusFirst(modal) {
+            var first = items(modal)[0];
+            if (first) first.focus();
+            else { modal.tabIndex = -1; modal.focus(); }
+        }
+        function sync() {
+            var next = current();
+            if (next === active) return;
+            var old = active;
+            active = next;
+            if (next) {
+                if (!old) {
+                    opener = next.contains(document.activeElement) ? lastOutside : document.activeElement;
+                    var menu = opener && opener.closest && opener.closest('#menu > li');
+                    fallback = menu ? menu.querySelector('a[aria-haspopup="true"]') : null;
+                }
+                if (!next.contains(document.activeElement)) focusFirst(next);
+            } else {
+                var target = opener && opener.isConnected && visible(opener) ? opener : fallback;
+                if (target && target.isConnected && visible(target)) target.focus();
+                opener = null; fallback = null;
+            }
+        }
+        new window.MutationObserver(sync).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] });
+        document.addEventListener('focusin', function (e) {
+            var modal = current();
+            if (modal && !modal.contains(e.target)) focusFirst(modal);
+            else if (!modal) lastOutside = e.target;
+        });
+        document.addEventListener('keydown', function (e) {
+            var modal = current();
+            if (!modal || e.key !== 'Tab') return;
+            var all = items(modal), first = all[0], last = all[all.length - 1];
+            if (!first) { e.preventDefault(); focusFirst(modal); }
+            else if (e.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+                e.preventDefault(); last.focus();
+            } else if (!e.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+                e.preventDefault(); first.focus();
+            }
+            e.stopPropagation();
+        }, true);
+        document.addEventListener('keydown', function (e) {
+            var modal = current();
+            if (!modal || e.defaultPrevented || e.key !== 'Escape') return;
+            var close = modal.querySelector('.modal-close, #tour-x');
+            if (close) { e.preventDefault(); close.click(); }
+        });
     }
 
     // ── 8c. Export model as R code (dagitty / ggdag) ──────────────────────────
 
-    window.exportRCode = function () {
-        var code = (window.Model && Model.dag) ? Model.dag.toString() : 'dag { }';
+    window.RCodeExport = { generate: function (graph) {
+        var code = graph ? graph.toString() : 'dag { }';
         // The model goes inside a single-quoted R string: a variable name such
         // as "Parent's income" would otherwise terminate it early.
-        var rstr = code.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        var r =
+        var rstr = code.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+        return (
             '# DAG exported from DAGitty — reproduce and analyse in R\n' +
             'library(dagitty)\n\n' +
             'g <- dagitty(\'' + rstr + '\')\n\n' +
@@ -945,7 +1084,12 @@
             '# ggdag(g) + theme_dag()\n' +
             '# ggdag_adjustment_set(g)            # minimal sufficient adjustment set(s)\n' +
             '# impliedConditionalIndependencies(g)\n' +
-            '# localTests(g, data = your_data)    # test those implications against data\n';
+            '# localTests(g, data = your_data)    # data columns must match variable names\n' +
+            '# Failure to reject a test does not validate the diagram or its causal directions.\n');
+    } };
+
+    window.exportRCode = function () {
+        var r = window.RCodeExport.generate(window.Model && Model.dag);
         if (window.DAGittyControl && DAGittyControl.getView) {
             DAGittyControl.getView().openHTMLDialog(
                 '<p style="margin:.2em 0 .5em;font-size:12px">R code (uses the <code>dagitty</code> package; ' +
@@ -977,6 +1121,25 @@
             if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) { e.preventDefault(); UndoRedo.redo(); return; }
             if (_orig) _orig.call(document, e);
         };
+    }
+
+    // The full-width toolbar can wrap on small screens. Its measured height
+    // keeps the canvas, sidebars and help overlays aligned at every breakpoint.
+    function initResponsiveLayout() {
+        var menu = document.getElementById('menu');
+        if (!menu) return;
+        function sync() {
+            var height = Math.ceil(menu.getBoundingClientRect().height);
+            if (!height || document.documentElement.style.getPropertyValue('--menu-h') === height + 'px') return;
+            document.documentElement.style.setProperty('--menu-h', height + 'px');
+            if (window.DAGittyControl && DAGittyControl.getView) {
+                var view = DAGittyControl.getView();
+                if (view && view.resize) view.resize();
+            }
+        }
+        if (window.ResizeObserver) new window.ResizeObserver(sync).observe(menu);
+        window.addEventListener('resize', sync);
+        sync();
     }
 
     // ── 10. Post-init (runs after initialize()) ───────────────────────────────
@@ -1018,8 +1181,18 @@
         initMenuKeyboard();
         initSectionHeaders();
         initTooltips();
+        initModalKeyboard();
         BeginnerMode.init();
         ThemeToggle.init();
+        initResponsiveLayout();
+
+        var discovery = document.getElementById('data-discovery-modal');
+        if (discovery) discovery.addEventListener('change', function (e) {
+            if (e.target.id === 'data-csv-input' || !DataModal._csvText) return;
+            DataModal._invalidate();
+            document.getElementById('btn-run-analysis').disabled = false;
+            DataModal._setStatus('Settings changed. Run the analysis again to update the suggestion.', 'warning');
+        });
 
         // Rename "selected" label
         var lbl = document.querySelector('label[for="variable_selected"]');

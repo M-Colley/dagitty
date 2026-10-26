@@ -20,7 +20,7 @@
  *   var result = CausalDiscovery.discoverFromCSV(csvText, alpha, useLingam);
  *   // result.modelCode  — DAGitty model string ready to paste / load
  *   // result.edgeCount
- *   // result.undirectedCount — edges left ambiguous (shown as <->)
+ *   // result.undirectedCount — edges left ambiguous (shown as -- in a PDAG)
  *   // result.causalOrder — variable names, most exogenous first (DirectLiNGAM)
  *   // result.warnings  — array of strings
  */
@@ -89,6 +89,12 @@ var CausalDiscovery = (function () {
         var headers = splitRow(lines[0]).map(function (h) { return h.trim(); });
         while (headers.length && headers[headers.length - 1] === '') headers.pop();
         if (headers.length < 2) throw new Error('Need at least 2 columns.');
+        var seenHeaders = Object.create(null);
+        headers.forEach(function (h) {
+            if (!h) throw new Error('Every data column needs a name in the first row.');
+            if (h in seenHeaders) throw new Error('Duplicate column name "' + h + '". Give each column a unique name.');
+            seenHeaders[h] = true;
+        });
 
         var rawRows = [];
         for (var i = 1; i < lines.length; i++) {
@@ -109,7 +115,7 @@ var CausalDiscovery = (function () {
     function parseTable(text) {
         var tok = tokenise(text), headers = tok.headers, rawRows = tok.rawRows;
         if (rawRows.length < 3) throw new Error('Need at least 3 data rows (got ' + rawRows.length + ').');
-        var columns = {}, kept = [], dropped = [];
+        var columns = Object.create(null), kept = [], dropped = [];
         headers.forEach(function (h, c) {
             var vals = new Array(rawRows.length), numeric = 0, nonEmpty = 0;
             for (var r = 0; r < rawRows.length; r++) {
@@ -127,9 +133,27 @@ var CausalDiscovery = (function () {
         return { headers: kept, columns: columns, nRows: rawRows.length, dropped: dropped };
     }
 
-    function parseCSV(text) {
+    // Discovery turns column names into graph variable ids. The local-tests
+    // reader only maps data columns to existing variables, so it must remain
+    // free to read these names even when the graph engine cannot create them.
+    function validateDiscoveryNames(headers) {
+        headers.forEach(function (name) {
+            if (/[\\\x00-\x1f\x7f]/.test(name)) {
+                throw new Error('Column “' + name + '” cannot become a diagram variable. ' +
+                    'Rename this column without backslashes or control characters before causal discovery.');
+            }
+            if (name === 'graph' || name === 'node' || Object.prototype.hasOwnProperty.call(Object.prototype, name)) {
+                throw new Error('Column “' + name + '” is reserved by the diagram engine. ' +
+                    'Rename this column before causal discovery (for example, “' + name + '_value”).');
+            }
+        });
+    }
+
+    function parseCSV(text, excludeVars, previewOnly) {
         var tok = tokenise(text);
         var allHeaders = tok.headers, rawRows = tok.rawRows;
+        var excluded = Object.create(null);
+        (excludeVars || []).forEach(function (name) { excluded[name] = true; });
         var p = allHeaders.length;
         if (rawRows.length < 3) throw new Error('Need at least 3 data rows (got ' + rawRows.length + ').');
 
@@ -144,10 +168,10 @@ var CausalDiscovery = (function () {
         rawRows.forEach(function(row) {
             for (var c = 0; c < p; c++) {
                 var cell = (row[c] || '').trim();
-                if (cell === '' || cell === 'NA' || cell === 'N/A' || cell === 'nan' || cell === 'NaN') continue;
+                if (isMissing(cell)) continue;
                 nonEmptyCount[c]++;
-                var v = parseFloat(cell);
-                if (!isNaN(v)) {
+                var v = Number(cell);
+                if (isFinite(v) && /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(cell)) {
                     numericCount[c]++;
                     distinctVals[c][v] = 1;
                     if (v !== Math.floor(v)) allInteger[c] = false;
@@ -180,6 +204,9 @@ var CausalDiscovery = (function () {
         for (var c = 0; c < p; c++) {
             var colName  = allHeaders[c];
             var total    = nonEmptyCount[c];
+            // Selection precedes name validation and complete-case filtering:
+            // an unchecked variable cannot exclude otherwise usable rows.
+            if (excluded[colName]) continue;
 
             // 1. Name-based ID check (catches ProlificID, SubjectID, etc.)
             if (isIdentifierColumn(colName)) {
@@ -213,23 +240,28 @@ var CausalDiscovery = (function () {
             var hint = droppedCols.length
                 ? ' Dropped non-numeric columns: ' + droppedCols.slice(0, 6).join(', ') + '.'
                 : '';
-            throw new Error('Need at least 2 numeric columns.' + hint);
+            throw new Error('Need at least 2 numeric columns' +
+                (excludeVars && excludeVars.length ? ' after exclusions.' : '.') + hint);
         }
 
         var headers = numericCols.map(function(c){ return allHeaders[c]; });
+        // Populate the selector before requiring complete rows or supported
+        // model names: users may need to uncheck the problematic column first.
+        if (previewOnly) return { headers: headers, droppedCols: droppedCols };
+        validateDiscoveryNames(headers);
 
         // Build data rows using only numeric columns; skip rows with missing values
         var data = [], skippedRows = 0;
         rawRows.forEach(function(row) {
-            var obj = {}, ok = true;
+            var obj = Object.create(null), ok = true;
             for (var ci = 0; ci < numericCols.length; ci++) {
                 var c = numericCols[ci];
                 var cell = (row[c] || '').trim();
-                if (cell === '' || cell === 'NA' || cell === 'N/A' || cell === 'nan' || cell === 'NaN') {
+                if (isMissing(cell)) {
                     ok = false; break;
                 }
-                var v = parseFloat(cell);
-                if (isNaN(v)) { ok = false; break; }
+                var v = Number(cell);
+                if (!isFinite(v) || !/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(cell)) { ok = false; break; }
                 obj[headers[ci]] = v;
             }
             if (ok) data.push(obj);
@@ -243,6 +275,11 @@ var CausalDiscovery = (function () {
             );
         }
 
+        var constant = headers.filter(function (h) {
+            return data.every(function (row) { return row[h] === data[0][h]; });
+        });
+        if (constant.length) throw new Error('No variation in the complete rows for ' + constant.join(', ') +
+            '. Remove these columns or supply more complete data.');
         return { headers: headers, data: data, droppedCols: droppedCols, skipped: skippedRows };
     }
 
@@ -263,14 +300,27 @@ var CausalDiscovery = (function () {
     function stddev(arr) { return Math.sqrt(variance(arr)); }
 
     function pearsonR(x, y) {
-        var n = x.length, mx = mean(x), my = mean(y);
+        var n = x.length;
+        if (n !== y.length || n < 2) return NaN;
+        // Correlation is invariant to units. Normalizing first avoids the
+        // absolute variance cutoff treating small measurements as independent,
+        // and avoids overflow for large but finite measurements.
+        var sx = 0, sy = 0;
+        for (var j = 0; j < n; j++) {
+            if (!isFinite(x[j]) || !isFinite(y[j])) return NaN;
+            sx = Math.max(sx, Math.abs(x[j])); sy = Math.max(sy, Math.abs(y[j]));
+        }
+        if (!sx || !sy) return NaN;
+        var nx = x.map(function (v) { return v / sx; });
+        var ny = y.map(function (v) { return v / sy; });
+        var mx = mean(nx), my = mean(ny);
         var num = 0, dx2 = 0, dy2 = 0;
         for (var i = 0; i < n; i++) {
-            var dx = x[i] - mx, dy = y[i] - my;
+            var dx = nx[i] - mx, dy = ny[i] - my;
             num += dx * dy; dx2 += dx * dx; dy2 += dy * dy;
         }
         var denom = Math.sqrt(dx2 * dy2);
-        return denom < 1e-14 ? 0 : num / denom;
+        return denom === 0 ? NaN : Math.max(-1, Math.min(1, num / denom));
     }
 
     /** n×n Pearson correlation matrix from {header: value} rows. */
@@ -324,9 +374,9 @@ var CausalDiscovery = (function () {
         var idx = [i, j].concat(condSet);
         var sub = idx.map(function(r){ return idx.map(function(c){ return C[r][c]; }); });
         var inv = invertMatrix(sub);
-        if (!inv) return 0;
+        if (!inv) return NaN; // An undefined test is not evidence of independence.
         var denom = Math.sqrt(Math.abs(inv[0][0] * inv[1][1]));
-        return denom < 1e-12 ? 0 : -inv[0][1] / denom;
+        return denom < 1e-12 ? NaN : -inv[0][1] / denom;
     }
 
     // ── Statistical test ──────────────────────────────────────────────────────
@@ -354,8 +404,9 @@ var CausalDiscovery = (function () {
      * n = sample size, k = size of conditioning set.
      */
     function fisherZPVal(r, n, k) {
+        if (!isFinite(r) || Math.abs(r) > 1 + 1e-10 || !(n - k - 3 > 0)) return NaN;
         var z = 0.5 * Math.log((1 + Math.min(0.9999, Math.abs(r))) / (1 - Math.min(0.9999, Math.abs(r))));
-        var se = 1 / Math.sqrt(Math.max(1, n - k - 3));
+        var se = 1 / Math.sqrt(n - k - 3);
         var stat = Math.abs(z / se);
         return 2 * (1 - normalCDF(stat));
     }
@@ -981,10 +1032,13 @@ var CausalDiscovery = (function () {
 
         // Sanitise variable name for DAGitty (wrap in quotes if needed)
         function qv(v) {
-            return /^[A-Za-z_][A-Za-z0-9_.]*$/.test(v) ? v : '"' + v.replace(/"/g, '\\"') + '"';
+            return /^[A-Za-z_][A-Za-z0-9_.]*$/.test(v) ? v : JSON.stringify(v);
         }
 
-        var lines = ['dag {'];
+        var hasUnresolved = adj.some(function (row, i) {
+            return row.some(function (edge, j) { return j > i && edge; });
+        });
+        var lines = [hasUnresolved ? 'pdag {' : 'dag {'];
 
         // Nodes
         for (var i = 0; i < p; i++) {
@@ -999,10 +1053,11 @@ var CausalDiscovery = (function () {
             }
         }
 
-        // Remaining undirected edges (bidirected proxy)
+        // An unknown direction is an undirected edge in a PDAG. A bidirected
+        // arrow would assert an unmeasured common cause, a different model.
         for (var ui = 0; ui < p; ui++) {
             for (var uj = ui + 1; uj < p; uj++) {
-                if (adj[ui][uj]) lines.push('  ' + qv(vars[ui]) + ' <-> ' + qv(vars[uj]));
+                if (adj[ui][uj]) lines.push('  ' + qv(vars[ui]) + ' -- ' + qv(vars[uj]));
             }
         }
 
@@ -1068,7 +1123,7 @@ var CausalDiscovery = (function () {
             for (var i = 0; i < headers.length; i++)
                 for (var j = i+1; j < headers.length; j++)
                     if (result.adj[i][j]) leftUndir++;
-            if (leftUndir > 0) warnings.push(leftUndir + ' edge(s) could not be oriented — shown as bidirected (<->).');
+            if (leftUndir > 0) warnings.push(leftUndir + ' edge(s) have unresolved direction — shown as undirected (--) in a PDAG.');
         }
         if (repair.reversed + repair.relaxed > 0)
             warnings.push(repairWarning(repair));
@@ -1110,7 +1165,7 @@ var CausalDiscovery = (function () {
 
         // Step 1 — parse (fast, no yield needed)
         try {
-            parsed   = parseCSV(csvText);
+            parsed   = parseCSV(csvText, opts.excludeVars);
         } catch (e) {
             return Promise.reject(e);
         }
@@ -1119,20 +1174,6 @@ var CausalDiscovery = (function () {
         data     = parsed.data;
         n        = data.length;
         warnings = [];
-
-        // Apply variable exclusions (from column-selection UI)
-        if (opts.excludeVars && opts.excludeVars.length > 0) {
-            var excl = {};
-            opts.excludeVars.forEach(function (v) { excl[v] = true; });
-            headers = headers.filter(function (h) { return !excl[h]; });
-            data = data.map(function (row) {
-                var obj = {};
-                headers.forEach(function (h) { obj[h] = row[h]; });
-                return obj;
-            });
-            if (headers.length < 2)
-                return Promise.reject(new Error('Need at least 2 variables after exclusions.'));
-        }
 
         if (parsed.droppedCols && parsed.droppedCols.length > 0)
             warnings.push('Skipped ' + parsed.droppedCols.length +
@@ -1184,7 +1225,7 @@ var CausalDiscovery = (function () {
                         if (result.adj[i][j]) leftUndir++;
                 if (leftUndir > 0)
                     warnings.push(leftUndir +
-                        ' edge(s) could not be oriented — shown as bidirected (↔).');
+                        ' edge(s) have unresolved direction — shown as undirected (—) in a PDAG.');
             }
             if (repair.reversed + repair.relaxed > 0)
                 warnings.push(repairWarning(repair));

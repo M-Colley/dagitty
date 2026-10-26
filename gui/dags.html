@@ -26,17 +26,17 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="dags.css" />
+  <link rel="stylesheet" href="dags.css?v=2026-10-26.4" />
 
   <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
        keep running the previously cached copy of these scripts after an update. -->
-  <script src="js/dagitty.js?v=2026-09-22.3"></script>
-  <script src="js/example-dags.js?v=2026-09-22.3"></script>
+  <script src="js/dagitty.js?v=2026-10-26.4"></script>
+  <script src="js/example-dags.js?v=2026-10-26.4"></script>
   <script src="js/styles/semlike.js"></script>
   <script src="js/styles/original.js"></script>
-  <script src="js/main.js?v=2026-09-22.3"></script>
+  <script src="js/main.js?v=2026-10-26.4"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js?v=2026-09-22.3"></script>
+  <script src="js/causal-discovery.js?v=2026-10-26.4"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -46,7 +46,12 @@
     var DAGittyControl;
 
     function initialize() {
-      DAGitty.setup({ autofocus: true });
+      DAGitty.setup({ autofocus: false });
+      // Focus the canvas on deliberate input, rather than stealing keyboard
+      // focus when the pointer crosses it or a dialog closes above it.
+      document.getElementById("canvas").addEventListener("pointerdown", function (e) {
+        if (!e.target.closest("input, textarea, button, select, a")) this.focus();
+      }, true);
       DAGittyControl = DAGitty.controllers[0];
 
       GUI.menus = ['model','examples','howto','layout','help'];
@@ -56,7 +61,8 @@
 
       DAGittyControl.observe('graphchange', function(g) {
         Model.dag = g;
-        document.getElementById('adj_matrix').value = g.toString();
+        var codeBox = document.getElementById('adj_matrix');
+        if (!codeBox.classList.contains('dirty')) codeBox.value = g.toString();
         if (!g.getVertex(document.getElementById('variable_id').value))
           document.getElementById('variable_id').value = '';
         displayImplicationInfo(false);
@@ -66,7 +72,8 @@
       });
 
       DAGittyControl.observe('graphlayoutchange', function(g) {
-        document.getElementById('adj_matrix').value = g.toString();
+        var codeBox = document.getElementById('adj_matrix');
+        if (!codeBox.classList.contains('dirty')) codeBox.value = g.toString();
       });
 
       DAGittyControl.observe('vertex_marked', function(v) {
@@ -100,18 +107,18 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js?v=2026-09-22.3"></script>
-  <script src="js/methods-export.js?v=2026-09-22.3"></script>
-  <script src="js/publication-export.js?v=2026-09-22.3"></script>
-  <script src="js/dag-wizard.js?v=2026-09-22.3"></script>
-  <script src="js/guided-tour.js?v=2026-09-22.3"></script>
-  <script src="js/diagram-check.js?v=2026-09-22.3"></script>
-  <script src="js/paths-panel.js?v=2026-09-22.3"></script>
-  <script src="js/local-tests.js?v=2026-09-22.3"></script>
-  <script src="js/report-export.js?v=2026-09-22.3"></script>
-  <script src="js/structured-editor.js?v=2026-09-22.3"></script>
+  <script src="js/ui-enhancements.js?v=2026-10-26.4"></script>
+  <script src="js/methods-export.js?v=2026-10-26.4"></script>
+  <script src="js/publication-export.js?v=2026-10-26.4"></script>
+  <script src="js/dag-wizard.js?v=2026-10-26.4"></script>
+  <script src="js/guided-tour.js?v=2026-10-26.4"></script>
+  <script src="js/diagram-check.js?v=2026-10-26.4"></script>
+  <script src="js/paths-panel.js?v=2026-10-26.4"></script>
+  <script src="js/local-tests.js?v=2026-10-26.4"></script>
+  <script src="js/report-export.js?v=2026-10-26.4"></script>
+  <script src="js/structured-editor.js?v=2026-10-26.4"></script>
   <!-- workspace.js restores saved/shared models, so it must run last -->
-  <script src="js/workspace.js?v=2026-09-22.3"></script>
+  <script src="js/workspace.js?v=2026-10-26.4"></script>
 </head>
 
 <body>
@@ -133,17 +140,20 @@
   <!-- ═══ Menu bar ══════════════════════════════════════════════════════════ -->
   <ul id="menu" role="menubar" aria-label="Main menu">
 
+    <li class="app-title" aria-hidden="true"><span class="brand-mark">D</span><span>DAGitty<small>Causal diagrams</small></span></li>
+
     <li role="none">
       <a href="javascript:void(0)" id="menu_model_title" role="menuitem" aria-haspopup="true">Model</a>
       <ul id="menu_model" style="z-index:50" role="menu">
         <li><a href="#" onclick="newModel();displayHide('menu_model')">New model</a></li>
+        <li><a href="#" onclick="DagWizard.start();displayHide('menu_model')">Build a DAG step-by-step…</a></li>
         <li><a href="#" onclick="StructuredEditor.open();displayHide('menu_model')">Edit as a list (no mouse needed)…</a></li>
         <li><a href="#" onclick="Workspace.openFile();displayHide('menu_model')">Open model file…</a></li>
         <li><a href="#" onclick="loadOnlineForm();displayHide('menu_model')">Load from dagitty.net</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="Workspace.shareLink();displayHide('menu_model')">Copy shareable link</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Generate DAG from data…</a></li>
+        <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Explore a graph from data (advanced)…</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="PubExport.open();displayHide('menu_model')"><strong>Publication figure…</strong> <span style="opacity:.6">(SVG · PNG · PDF)</span></a></li>
         <li><a href="#" onclick="ReportExport.downloadHTML();displayHide('menu_model')"><strong>Export report</strong> <span style="opacity:.6">(one HTML file: figure, analysis, methods text)</span></a></li>
@@ -206,10 +216,14 @@
       </ul>
     </li>
 
+    <li class="menu-tools" role="none">
+      <button id="btn-build-dag" type="button" onclick="DagWizard.start()">Build a DAG</button>
+    </li>
+
     <!-- Undo / Redo -->
     <li class="menu-tools" role="none" aria-label="Undo and redo">
-      <button id="btn-undo" type="button" title="Undo (Ctrl+Z)" onclick="UndoRedo.undo()" disabled>↩ Undo</button>
-      <button id="btn-redo" type="button" title="Redo (Ctrl+Y)" onclick="UndoRedo.redo()" disabled>Redo ↪</button>
+      <button id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" onclick="UndoRedo.undo()" disabled>↩ <span class="toolbar-label">Undo</span></button>
+      <button id="btn-redo" type="button" title="Redo (Ctrl+Y)" aria-label="Redo (Ctrl+Y)" onclick="UndoRedo.redo()" disabled><span class="toolbar-label">Redo</span> ↪</button>
     </li>
 
     <!-- Beginner / Advanced -->
@@ -229,7 +243,6 @@
       </button>
     </li>
 
-    <li class="app-title" aria-hidden="true">DAGitty v3.1</li>
   </ul>
 
   <!-- ═══ Canvas ════════════════════════════════════════════════════════════ -->
@@ -265,7 +278,7 @@ E -&gt; D
     <div id="quickstart" style="display:none">
       <div class="qs-card">
         <button type="button" class="qs-wizard-btn" onclick="DagWizard.start()">✨ Build a DAG step-by-step</button>
-        <p class="qs-or">or <a href="#" onclick="StructuredEditor.open();return false">edit the diagram as a list</a> (keyboard only), or do it yourself:</p>
+        <p class="qs-or">Prefer a keyboard? <a href="#" onclick="StructuredEditor.open();return false">Edit as a list</a>.<br>Or draw directly:</p>
         <ol>
           <li><strong>Click the canvas</strong> to add a variable (node).</li>
           <li><strong>Click one variable, then another</strong> to draw an arrow.</li>
@@ -476,7 +489,7 @@ E -&gt; D
       Paths
       <span id="paths_count" class="dcheck-count" style="display:none" aria-label="open biasing paths"></span>
       <span class="help-tip" style="margin-left:auto;flex-shrink:0"
-        title="Every route between exposure and outcome, and why each one is open or blocked given what you adjust for. Causal paths carry the effect; biasing paths must all be blocked.">?</span>
+        title="Shows up to 40 paths between exposure and outcome, with explanations under the selected effect. Check the identification panel for whether the whole adjustment set is sufficient.">?</span>
     </h3>
     <div id="paths_panel"></div>
 
@@ -491,7 +504,7 @@ E -&gt; D
       <div id="testable_implications"></div>
       <div class="model-code-actions">
         <button type="button" id="btn-local-tests" onclick="LocalTests.open()"
-          title="Upload your data and test every implied independence in the browser">Test against my data…</button>
+          title="Test up to 1,000 implied independencies in the browser using suitable numeric data">Test against my data…</button>
       </div>
     </div>
 
@@ -523,7 +536,7 @@ E -&gt; D
              back to the original clears the flag again. Colour comes from the
              .dirty rule in dags.css, which has a dark-theme variant. -->
         <textarea rows="9" name="adj_matrix" id="adj_matrix"
-          oninput="var same=(Model.dag&&this.value==Model.dag.toString());(same?displayHide:displayShow)('model_refresh');this.classList.toggle('dirty',!same);"></textarea>
+          oninput="modelCodeChanged()"></textarea>
       </form>
       <div class="model-code-actions">
         <button type="button" onclick="loadDAGFromTextData()">Update</button>
@@ -560,22 +573,24 @@ E -&gt; D
   <div class="modal-dialog">
 
     <div class="modal-header">
-      <h2 id="data-modal-title">Generate DAG from Data</h2>
+      <h2 id="data-modal-title">Explore a graph from data</h2>
       <button type="button" class="modal-close" aria-label="Close" onclick="DataModal.close()">✕</button>
     </div>
 
     <div class="modal-body">
       <p class="modal-intro">
         Upload a data file to automatically suggest a causal graph using the
-        <strong>PC algorithm</strong> (skeleton + collider orientation) followed by
+        <strong>PC algorithm</strong> (skeleton + collider orientation), optionally followed by
         <strong><a href="https://www.jmlr.org/papers/v12/shimizu11a.html" target="_blank" rel="noopener">DirectLiNGAM</a></strong>,
         which estimates a causal ordering of your variables from the non-Gaussianity of the data.
-        The result is always a DAG.
+        With ordering off, unresolved directions remain undirected in a partially directed graph (PDAG).
       </p>
 
       <div class="modal-callout">
-        ⚠ Causal discovery is a suggestion, not ground truth. Always validate the result
-        against domain knowledge. Works best with 100+ observations and linear relationships.
+        This is exploratory evidence, not a validated causal model. Review every connection with
+        domain knowledge and study timing. These methods assume linear relationships, independent
+        observations and no unmeasured confounding; DirectLiNGAM additionally requires independent,
+        non-Gaussian errors. A large sample alone does not justify these assumptions.
       </div>
 
       <div class="modal-field">
@@ -602,12 +617,12 @@ E -&gt; D
       <div class="modal-field">
         <label for="data-alpha" class="modal-label">
           Significance level for independence tests
-          <span class="help-tip" title="Lower = stricter, fewer edges. Higher = more permissive, more edges.">?</span>
+          <span class="help-tip" title="PC removes a connection when independence is not rejected. A lower significance threshold usually removes more connections; it does not make the remaining arrows more certain. Results also depend on sample size, conditioning and pruning settings.">?</span>
         </label>
         <select id="data-alpha">
-          <option value="0.01">0.01 — strict (fewer, more certain edges)</option>
+          <option value="0.01">0.01 — usually fewer connections</option>
           <option value="0.05" selected>0.05 — standard</option>
-          <option value="0.10">0.10 — permissive (more, less certain edges)</option>
+          <option value="0.10">0.10 — usually more connections</option>
         </select>
       </div>
 
@@ -615,7 +630,7 @@ E -&gt; D
         <label for="data-speed" class="modal-label">
           Analysis speed
           <span class="help-tip"
-            title="Fast: caps conditioning sets at depth 2 and pre-prunes weak correlations — finishes in seconds even with 20+ variables. Standard: depth 3 (recommended). Thorough: depth 5 — may freeze with many variables.">?</span>
+            title="Every setting pre-prunes weak pairwise correlations and limits conditioning depth: Fast, |r| below .08 and depth 2; Standard, .05 and depth 3; Thorough, .02 and depth 5. Pruning can omit meaningful relationships; compare settings and review the assumptions. Thorough can be slow with many variables.">?</span>
         </label>
         <select id="data-speed">
           <option value="fast">Fast — depth 2, weak-edge pruning (large / many variables)</option>
@@ -626,10 +641,10 @@ E -&gt; D
 
       <div class="modal-field">
         <label class="modal-label modal-label-inline">
-          <input type="checkbox" id="data-use-lingam" checked>
+          <input type="checkbox" id="data-use-lingam">
           Apply <a href="https://www.jmlr.org/papers/v12/shimizu11a.html" target="_blank" rel="noopener" onclick="event.stopPropagation()">DirectLiNGAM</a> ordering to resolve ambiguous edge directions
           <span class="help-tip"
-            title="DirectLiNGAM (Shimizu et al. 2011) estimates a single causal ordering of all variables from the non-Gaussianity of the data, then orients every edge the PC algorithm left ambiguous to agree with it. Assumes linear relationships and non-Gaussian noise — of little help if your variables are close to normally distributed.">?</span>
+            title="DirectLiNGAM estimates an order under linearity, independent non-Gaussian errors and no unmeasured confounding. It uses that order to orient unresolved PC connections. Leave this off to preserve uncertainty; an estimated order does not establish causal direction.">?</span>
         </label>
       </div>
 
@@ -726,9 +741,9 @@ E -&gt; D
           <label class="pub-field">
             <span>PNG resolution</span>
             <select id="pub-png-scale">
-              <option value="2">2× (screen)</option>
-              <option value="3" selected>3× (≈300 dpi)</option>
-              <option value="4">4× (print)</option>
+              <option value="2">2× pixels</option>
+          <option value="3" selected>3× pixels (default)</option>
+              <option value="4">4× pixels (larger file)</option>
             </select>
           </label>
 

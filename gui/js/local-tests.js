@@ -27,6 +27,12 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function modelKey(g) { return window.AnalysisModelKey ? window.AnalysisModelKey(g) : g.toString(); }
+    function matchesModel(result, g) {
+        if (!result || !g) return false;
+        return result.modelKey !== undefined ? result.modelKey === modelKey(g) : result.modelCode === g.toString();
+    }
+
     // ── Statistics ────────────────────────────────────────────────────────
 
     function atanhClamped(r) {
@@ -43,7 +49,7 @@
      */
     function fisherTest(r, n, k) {
         var df = n - k - 3;
-        if (!(df > 0)) return null;
+        if (!(df > 0) || typeof r !== 'number' || !isFinite(r) || Math.abs(r) > 1) return null;
         var z = atanhClamped(r), se = 1 / Math.sqrt(df);
         var stat = z / se;
         var p = 2 * (1 - CausalDiscovery.normalCDF(Math.abs(stat)));
@@ -75,23 +81,31 @@
         var m = columns.length, n = columns[0].length, rows = [];
         for (var i = 0; i < n; i++) {
             var ok = true;
-            for (var c = 0; c < m; c++) if (!isFinite(columns[c][i])) { ok = false; break; }
+            for (var c = 0; c < m; c++) if (typeof columns[c][i] !== 'number' || !isFinite(columns[c][i])) { ok = false; break; }
             if (ok) rows.push(i);
         }
-        if (rows.length < m + 4) return { error: 'too few complete rows (' + rows.length + ')' };
+        if (rows.length < m + 2) return { error: 'too few complete rows (' + rows.length + ')' };
 
         var sub = columns.map(function (col) { return rows.map(function (i) { return col[i]; }); });
+        if (sub.some(function (col) { return col.every(function (v) { return v === col[0]; }); })) {
+            return { error: 'a variable is constant in the complete rows' };
+        }
         var C = [];
         for (var a = 0; a < m; a++) {
             C.push([]);
             for (var b = 0; b < m; b++) C[a].push(a === b ? 1 : CausalDiscovery.pearsonR(sub[a], sub[b]));
+        }
+        if (C.some(function (row) { return row.some(function (v) { return !isFinite(v); }); })) {
+            return { error: 'correlation could not be estimated reliably' };
         }
         if (m === 2) return { r: C[0][1], n: rows.length };
         var inv = CausalDiscovery.invertMatrix(C);
         if (!inv) return { error: 'variables are collinear' };
         var denom = Math.sqrt(Math.abs(inv[0][0] * inv[1][1]));
         if (denom < 1e-12) return { error: 'variables are collinear' };
-        return { r: -inv[0][1] / denom, n: rows.length };
+        var r = -inv[0][1] / denom;
+        if (!isFinite(r) || Math.abs(r) > 1 + 1e-10) return { error: 'correlation could not be estimated reliably' };
+        return { r: Math.max(-1, Math.min(1, r)), n: rows.length };
     }
 
     // ── Implications of the diagram ───────────────────────────────────────
@@ -128,10 +142,11 @@
     /** Best-effort column for each variable: exact, then case-insensitive, then punctuation-insensitive. */
     function autoMap(vars, headers) {
         var map = {};
-        var lower = {}, normed = {};
+        var lower = Object.create(null), normed = Object.create(null);
         headers.forEach(function (h) {
-            if (!(h.toLowerCase() in lower)) lower[h.toLowerCase()] = h;
-            if (!(norm(h) in normed)) normed[norm(h)] = h;
+            var l = h.toLowerCase(), n = norm(h);
+            lower[l] = l in lower ? null : h;
+            normed[n] = n in normed ? null : h;
         });
         vars.forEach(function (v) {
             if (headers.indexOf(v) !== -1) map[v] = v;
@@ -151,13 +166,18 @@
      * @param {number} alpha
      */
     function run(g, table, mapping, alpha) {
-        alpha = alpha || 0.05;
+        if (alpha === undefined) alpha = 0.05;
+        if (!(alpha > 0 && alpha < 1)) throw new Error('The significance level must be between 0 and 1.');
         var imps = implicationsOf(g);
         var tests = [];
         imps.list.forEach(function (imp) {
             var names = [imp.x, imp.y].concat(imp.z);
             var missing = names.filter(function (v) { return !mapping[v] || !table.columns[mapping[v]]; });
             if (missing.length) { tests.push({ imp: imp, skipped: 'not in the data: ' + missing.join(', ') }); return; }
+            var mapped = names.map(function (v) { return mapping[v]; });
+            if (mapped.some(function (col, i) { return mapped.indexOf(col) !== i; })) {
+                tests.push({ imp: imp, skipped: 'different diagram variables are matched to the same data column' }); return;
+            }
             var pc = partialFromColumns(names.map(function (v) { return table.columns[mapping[v]]; }));
             if (pc.error) { tests.push({ imp: imp, skipped: pc.error }); return; }
             var ft = fisherTest(pc.r, pc.n, imp.z.length);
@@ -180,6 +200,8 @@
 
         var ns = tested.map(function (t) { return t.n; });
         return {
+            modelKey: modelKey(g),
+            modelCode: g.toString(),
             tests: tests,
             summary: {
                 nImplied: imps.list.length, capped: imps.capped, droppedSelection: imps.droppedSelection,
@@ -206,10 +228,11 @@
         var out = 'We tested ' + (s.tested === s.nImplied ? 'all ' : '') + s.tested + ' of the ' +
             (s.capped ? 'at least ' : '') + s.nImplied + ' implied conditional independencies against our data (' +
             nText + ') using partial-correlation tests with Fisher\'s z transformation (α = ' + s.alpha +
-            '; equivalent to localTests(type = "cis") in the dagitty R package). ';
+            '; a linear parametric check of the kind provided by dagitty::localTests(type = "cis")). ';
         if (s.tested === 0) return out + 'No implication could be tested with the available columns.';
         if (s.violated === 0) {
-            out += 'None was rejected, so the data are consistent with the independencies the diagram implies.';
+            out += 'None was rejected. This does not establish independence: weak effects, small samples and ' +
+                'nonlinear relationships can escape detection.';
         } else {
             var v = res.tests.filter(function (t) { return t.violated; });
             var shown = v.slice(0, 5).map(function (t) {
@@ -218,13 +241,16 @@
             out += s.violated + ' ' + (s.violated === 1 ? 'was' : 'were') + ' rejected: ' + shown.join('; ') +
                 (v.length > 5 ? '; and ' + (v.length - 5) + ' more' : '') + '. After Holm correction for multiple testing ' +
                 (s.violatedHolm ? s.violatedHolm + ' remained significant.' : 'none remained significant.') +
-                ' A rejected independence suggests the diagram omits a relationship between the variables involved, ' +
-                'or that a linear test is inappropriate for them.';
+                ' Rejections are evidence against the diagram together with the statistical assumptions; ' +
+                'they may reflect an omitted relationship, sampling variation, selection, measurement error ' +
+                'or an inappropriate linear test.';
         }
         if (s.skipped) {
             out += ' ' + s.skipped + ' implication' + (s.skipped !== 1 ? 's' : '') +
-                ' could not be tested (variables absent from the data or too few complete cases).';
+                ' could not be tested (see the table for missing columns, insufficient complete cases or other reasons).';
         }
+        out += ' The tests assume independent observations and suitable linear relationships; numeric codes ' +
+            'for categorical variables may need a different test. Neither rejection nor non-rejection identifies causal direction.';
         return out;
     }
 
@@ -235,7 +261,7 @@
             rows.push(t.skipped
                 ? [implText(t.imp), '', '', '', '', '', '', 'not tested: ' + t.skipped]
                 : [implText(t.imp), t.estimate.toFixed(4), t.lo.toFixed(4), t.hi.toFixed(4), t.p.toExponential(3),
-                   t.pHolm.toExponential(3), t.n, t.violated ? 'violated' : 'consistent']);
+                   t.pHolm.toExponential(3), t.n, t.violated ? 'rejected (raw p)' : 'not rejected']);
         });
         return rows.map(function (r) { return r.join('\t'); }).join('\n');
     }
@@ -262,11 +288,12 @@
               '<div class="modal-body">' +
                 '<p class="modal-intro">Your diagram predicts that certain pairs of variables are independent once ' +
                   'others are held fixed. Upload the data you collected and each prediction is tested with a ' +
-                  'partial-correlation test (Fisher\'s z) — the same test as <code>localTests()</code> in the dagitty R package. ' +
-                  'A rejected prediction means the diagram is missing a relationship between those variables.</p>' +
+                  'partial-correlation test (Fisher\'s z), a linear parametric check like <code>localTests(type = "cis")</code> ' +
+                  'in the dagitty R package. A rejection calls for reviewing the diagram and the test assumptions.</p>' +
                 '<div class="modal-callout">These tests are linear and treat every column as numeric ' +
-                  '(binary or ordinal codes are used as they are). Treat the results as a check on the diagram, ' +
-                  'not as proof of it: passing does not make the arrows correct.</div>' +
+                  '(binary or ordinal codes are used as they are). They assume independent observations; ' +
+                  'categorical data, nonlinear relationships or repeated measures may need other methods. ' +
+                  'Failure to reject does not prove independence or make the arrows correct.</div>' +
                 '<div class="modal-field">' +
                   '<label for="lt-file" class="modal-label">Data file ' +
                     '<span class="modal-label-hint">— CSV, TSV, Excel or plain text; first row = column names</span></label>' +
@@ -314,6 +341,9 @@
         root.querySelector('#lt-run').addEventListener('click', runFromDialog);
         root.querySelector('#lt-use').addEventListener('click', useInMethods);
         root.querySelector('#lt-copy').addEventListener('click', copyTable);
+        root.querySelector('#lt-alpha').addEventListener('change', function () {
+            invalidateResults('Significance level changed. Run the tests again.');
+        });
     }
 
     function setStatus(msg, type) {
@@ -322,11 +352,25 @@
         el.className = 'modal-status' + (type ? ' status-' + type : '');
     }
 
+    function invalidateResults(message) {
+        var hadResults = !!window.LocalTests.last;
+        window.LocalTests.last = null;
+        if (hadResults && window.MethodsExport) MethodsExport.setLocalTestResults(null);
+        if (!root) return;
+        root.querySelector('#lt-results').style.display = 'none';
+        root.querySelector('#lt-copy').disabled = true;
+        root.querySelector('#lt-use').disabled = true;
+        if (message && hadResults) setStatus(message, 'warning');
+    }
+
     function loadFile(file) {
+        invalidateResults();
+        var readId = state.readId = (state.readId || 0) + 1;
         state.table = null;
         root.querySelector('#lt-run').disabled = true;
         root.querySelector('#lt-results').style.display = 'none';
         TabularFile.read(file, function (err, res) {
+            if (readId !== state.readId) return;
             if (err) { setStatus(err.message, 'error'); return; }
             try {
                 state.table = CausalDiscovery.parseTable(res.text);
@@ -339,7 +383,7 @@
                 (state.table.dropped.length > 6 ? '…' : '') + '.';
             setStatus(msg + ' Check the matching, then run.', 'success');
             root.querySelector('#lt-run').disabled = false;
-        }, function (s) { setStatus(s, 'running'); });
+        }, function (s) { if (readId === state.readId) setStatus(s, 'running'); });
     }
 
     function diagramVariables(g) {
@@ -375,7 +419,10 @@
                 if (state.mapping[v] === h) o.selected = true;
                 sel.appendChild(o);
             });
-            sel.addEventListener('change', function () { state.mapping[v] = sel.value || null; });
+            sel.addEventListener('change', function () {
+                state.mapping[v] = sel.value || null;
+                invalidateResults('Column matching changed. Run the tests again.');
+            });
             td.appendChild(sel);
             tr.appendChild(td);
             tbody.appendChild(tr);
@@ -411,8 +458,9 @@
 
         var txt;
         if (!s.tested) txt = 'No implication could be tested.';
-        else if (!s.violated) txt = 'All ' + s.tested + ' testable implications are consistent with the data at α = ' + s.alpha + '.';
-        else txt = s.violated + ' of ' + s.tested + ' implications ' + (s.violated === 1 ? 'is' : 'are') + ' violated at α = ' +
+        else if (!s.violated) txt = 'None of the ' + s.tested + ' tested implications was rejected at α = ' + s.alpha +
+            '. This does not prove independence or validate the diagram.';
+        else txt = s.violated + ' of ' + s.tested + ' implications ' + (s.violated === 1 ? 'was' : 'were') + ' rejected at α = ' +
             s.alpha + (s.violatedHolm ? ' (' + s.violatedHolm + ' after Holm correction)' : ' (none after Holm correction)') + '.';
         if (s.skipped) txt += ' ' + s.skipped + ' not tested.';
         if (s.droppedSelection) txt += ' ' + s.droppedSelection + ' involving the selection variable were left out.';
@@ -426,7 +474,7 @@
             var cells = t.skipped
                 ? [implText(t.imp), '', '', '', '', '', 'not tested — ' + t.skipped]
                 : [implText(t.imp), f2(t.estimate), f2(t.lo) + ' to ' + f2(t.hi), pCell(t.p),
-                   pCell(t.pHolm), String(t.n), t.violated ? 'violated' : 'consistent'];
+                   pCell(t.pHolm), String(t.n), t.violated ? 'rejected (raw p)' : 'not rejected'];
             cells.forEach(function (c, i) {
                 var td = document.createElement(i === 0 ? 'th' : 'td');
                 if (i === 0) td.scope = 'row';
@@ -441,6 +489,10 @@
     function useInMethods() {
         var res = window.LocalTests.last;
         if (!res || !window.MethodsExport) return;
+        if (!window.Model || !matchesModel(res, Model.dag)) {
+            invalidateResults('The diagram changed. Run the tests again before using the results.');
+            return;
+        }
         MethodsExport.setLocalTestResults(methodsSentence(res));
         setStatus('Added to "Assumptions for your paper" — the placeholder now reports these results.', 'success');
         if (window.Workspace && Workspace.toast) Workspace.toast('Methods statement updated with the test results.', 'ok');
@@ -461,6 +513,7 @@
         state = state || {};
         root.style.display = 'flex';
         var g = Model.dag;
+        if (LocalTests.last && !matchesModel(LocalTests.last, g)) invalidateResults();
         var imps = implicationsOf(g);
         if (!imps.list.length) {
             setStatus('This diagram implies no testable independencies' +
@@ -477,12 +530,16 @@
 
     window.LocalTests = {
         open: open, close: close, run: run, last: null,
+        matchesModel: matchesModel,
         fisherTest: fisherTest, holm: holm, autoMap: autoMap, implicationsOf: implicationsOf,
         partialFromColumns: partialFromColumns, methodsSentence: methodsSentence, toTSV: toTSV, implText: implText
     };
 
     window.addEventListener('load', function () {
         if (window.DAGittyControl) DAGittyControl.observe('graphchange', function () {
+            if (LocalTests.last && (!window.Model || !matchesModel(LocalTests.last, Model.dag))) {
+                invalidateResults('The diagram changed. Run the tests again.');
+            }
             if (root && root.style.display === 'flex') renderMapping();
         });
     });

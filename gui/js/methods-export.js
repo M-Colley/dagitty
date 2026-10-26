@@ -14,13 +14,32 @@
 
     function ids(verts) { return _.pluck(verts, 'id').sort(); }
 
+    // Statistical evidence belongs to the causal model, not to its drawing.
+    // Keep insertion order, coordinates, bounding boxes and arrow curvature out
+    // of this key; retain roles because latent/selection status changes tests.
+    window.AnalysisModelKey = function (g) {
+        if (!g) return null;
+        var roles = ['getSources', 'getTargets', 'getAdjustedNodes', 'getLatentNodes', 'getSelectedNodes']
+            .map(function (getter) { return g[getter] ? ids(g[getter]()) : []; });
+        var edges = g.getEdges().map(function (e) {
+            var ends = [e.v1.id, e.v2.id];
+            if (Graph.Edgetype.Symmetric[e.directed]) ends.sort();
+            return [ends[0], ends[1], e.directed];
+        });
+        edges.sort(function (a, b) {
+            a = JSON.stringify(a); b = JSON.stringify(b);
+            return a < b ? -1 : a > b ? 1 : 0;
+        });
+        return JSON.stringify([g.getType(), ids(g.getVertices()), roles, edges]);
+    };
+
     var IMPLICATION_CAP = 200;
 
     // Sentence(s) describing the outcome of testing the implications against
     // data, set by LocalTests (local-tests.js) and cleared when the model
     // changes in a way that invalidates them. Null → the placeholder is shown.
     var _localTestResults = null;
-    var _localTestCode = null;   // model code the results belong to
+    var _localTestKey = null;   // causal model (excluding layout) the results belong to
 
     function list(arr) {
         // "A", "A and B", "A, B and C"
@@ -36,6 +55,11 @@
     function generate() {
         var g = (window.Model && Model.dag) ? Model.dag : null;
         if (!g) return 'No model loaded.';
+        // Exports can call generate() before the debounced refresh has run.
+        // Never attach results from a different diagram to a new statement.
+        if (_localTestResults && window.AnalysisModelKey(g) !== _localTestKey) {
+            _localTestResults = null; _localTestKey = null;
+        }
 
         var exposures = ids(g.getSources());
         var outcomes  = ids(g.getTargets());
@@ -60,7 +84,11 @@
         var roleParts = [];
         roleParts.push(list(exposures) + ' as the exposure' + (exposures.length > 1 ? 's (causes)' : ' (cause)'));
         roleParts.push(list(outcomes) + ' as the outcome' + (outcomes.length > 1 ? 's (effects)' : ' (effect)'));
-        var overview = 'We represented our causal assumptions as a directed acyclic graph (DAG) over ' +
+        var graphType = g.getType ? g.getType() : 'dag';
+        var partial = graphType === 'pdag';
+        var overview = 'We represented our causal assumptions as a ' +
+            (partial ? 'partially directed acyclic graph (PDAG)' : graphType === 'dag'
+                ? 'directed acyclic graph (DAG)' : 'causal graph (' + graphType.toUpperCase() + ')') + ' over ' +
             allIds.length + ' variable' + (allIds.length !== 1 ? 's' : '') + ', specifying ' +
             list(roleParts) + '.';
         if (covariates.length) {
@@ -75,6 +103,8 @@
             overview += ' ' + list(latent) + ' ' + (latent.length !== 1 ? 'were' : 'was') +
                 ' modelled as unobserved (latent).';
         }
+        if (partial) overview += ' Undirected edges represent unresolved causal direction; these relationships ' +
+            'require subject-matter review before presenting a fully specified causal model.';
         lines.push(overview);
 
         // 2. Assumed relationships. The directed arrows are shown in the diagram
@@ -94,11 +124,18 @@
         var kind = kindEl ? kindEl.value : 'adj_total';
         var expOutBase = list(exposures) + ' on ' + list(outcomes);
         var usingIV = (kind === 'instrument');
-        var usingAdjustment = !cyclic && !usingIV;
+        var unsupported = kind === 'adj_direct' && (selected.length || graphType !== 'dag')
+            ? 'DAGitty does not support direct-effect adjustment analysis for this graph type or with selection nodes.'
+            : kind === 'adj_causalodds' && (graphType !== 'dag' || exposures.length !== 1 || outcomes.length !== 1 || selected.length !== 1)
+                ? 'The causal-odds-ratio analysis requires a DAG with exactly one exposure, one outcome and one selection node.'
+                : null;
+        var usingAdjustment = !cyclic && !usingIV && !unsupported;
 
         if (cyclic) {
             lines.push('NOTE: the diagram currently contains a cycle (' + cyclic + '), so a causal ' +
                 'effect cannot be identified until the diagram is made acyclic.');
+        } else if (unsupported) {
+            lines.push('NOTE: ' + unsupported + ' No identification claim is made for the chosen strategy.');
         } else if (usingIV) {
             lines.push('We estimated the effect of ' + expOutBase + ' using an instrumental-variable (IV) ' +
                 'strategy rather than covariate adjustment. This identifies the effect only if a valid instrument ' +
@@ -106,7 +143,17 @@
                 '(ii) affects ' + list(outcomes) + ' only through ' + list(exposures) + ' (the exclusion ' +
                 'restriction), and (iii) shares no unmeasured common cause with ' + list(outcomes) +
                 ' (instrument exogeneity). The exclusion restriction and exogeneity are encoded in the diagram ' +
-                'but cannot be verified from data alone.');
+                'but cannot be verified from data alone. The chosen instrument, estimator and target effect must ' +
+                'also be specified: additional assumptions such as linearity or homogeneous effects, or monotonicity ' +
+                'for a local average treatment effect, depend on that choice.');
+        } else if (kind === 'adj_causalodds') {
+            var oddsSufficient = GraphAnalyzer.isAdjustmentSetCausalOddsRatio(g);
+            lines.push('We targeted the causal odds ratio of ' + expOutBase + ' in a sample selected on ' +
+                setBraces(selected) + ', with the proposed adjustment set ' + setBraces(adjusted) + '. ' +
+                (oddsSufficient ? 'This set passes DAGitty\'s causal-odds-ratio criterion under the diagram.'
+                    : 'WARNING: this set does NOT pass DAGitty\'s causal-odds-ratio criterion under the diagram; ' +
+                      'the chosen analysis is not justified by that criterion.') +
+                ' Minimal adjustment sets for this selection-specific criterion are not enumerated by this interface.');
         } else {
             var isDirect = (kind === 'adj_direct');
             var effectLabel = isDirect ? 'direct effect'
@@ -137,25 +184,26 @@
 
             if (adjusted.length === 0) {
                 if (noSetExists) {
-                    lines.push('Under this DAG ' + expOut + ' is not identifiable by covariate adjustment alone: ' +
-                        'no set of measured variables blocks all ' + pathsWord + '.' + mediatorNote);
+                    lines.push('Under this diagram ' + expOut + ' is not identifiable by covariate adjustment alone: ' +
+                        'no measured-variable set meets the adjustment criterion' +
+                        (selected.length ? ', including its requirements for the selection mechanism' : '') + '.' + mediatorNote);
                 } else if (noAdjNeeded) {
-                    lines.push('Under this DAG no adjustment is required to estimate ' + expOut +
+                    lines.push('Under this diagram no adjustment is required to estimate ' + expOut +
                         ': there are no open ' + pathsWord + '.' + mediatorNote);
                 } else {
-                    lines.push('Under this DAG ' + expOut + ' is ' + (isDirect ? 'not identified without adjustment'
+                    lines.push('Under this diagram ' + expOut + ' is ' + (isDirect ? 'not identified without adjustment'
                         : 'confounded') + ': a naive unadjusted comparison would be biased. ' +
                         msaSentence(msas) + mediatorNote);
                 }
             } else if (isSuff) {
                 var extra = '';
                 if (!isMinimal && noAdjNeeded) {
-                    extra = ' No adjustment would strictly have been necessary under this DAG.';
+                    extra = ' No adjustment would strictly have been necessary under this diagram.';
                 } else if (!isMinimal && !noSetExists) {
                     extra = ' A smaller set would also suffice: ' + msaSentence(msas).replace(/^Minimal/, 'the minimal');
                 }
                 lines.push('To estimate ' + expOut + ' we adjusted for ' + setBraces(adjusted) +
-                    '. Under the DAG this set is sufficient to block all ' + pathsWord + '.' + extra + mediatorNote);
+                    '. Under the diagram this set meets the adjustment criterion for the chosen effect.' + extra + mediatorNote);
             } else {
                 // Say what is wrong with the chosen set as precisely as we can:
                 // for the total effect, adjusting for anything on (or downstream
@@ -165,14 +213,15 @@
                     ? ' — it includes a variable that lies on, or is affected by, the causal pathway from ' +
                       list(exposures) + ' to ' + list(outcomes) + ', which must not be adjusted for when ' +
                       'estimating a total effect'
+                    : selected.length ? ' — a biasing path remains open or the selection mechanism fails the criterion'
                     : ' — ' + pathsWord + ' remain open';
                 var remedy = noSetExists
                     ? 'No set of measured variables identifies this effect by adjustment under the current diagram.'
                     : noAdjNeeded
-                        ? 'Under this DAG the effect could be estimated without any adjustment.'
+                        ? 'Under this diagram the effect could be estimated without any adjustment.'
                         : msaSentence(msas);
                 lines.push('WARNING: the chosen adjustment set ' + setBraces(adjusted) + ' is NOT sufficient to ' +
-                    'identify ' + expOut + ' under this DAG' + why + '. ' + remedy + mediatorNote);
+                    'identify ' + expOut + ' under this diagram' + why + '. ' + remedy + mediatorNote);
             }
         }
 
@@ -183,7 +232,8 @@
                 ', which determine' + (selected.length === 1 ? 's' : '') + ' who is included in the sample. ' +
                 'Conditioning on a common effect (collider) of, or a variable affected by, the exposure or outcome ' +
                 'can itself open a biasing path; we assume the diagram correctly represents the selection mechanism ' +
-                'and that any resulting selection bias is addressed by the adjustment described above.');
+                'and assess whether the proposed adjustment addresses that bias. A selection node does not ' +
+                'by itself correct selection bias; an insufficient adjustment set remains insufficient.');
         }
 
         // 4. Testable implications. Enumerating every minimal implication is the
@@ -204,11 +254,11 @@
                     // Filled in by the in-browser "Test against my data" tool.
                     s += _localTestResults;
                 } else {
-                    s += 'We tested ' + (count !== 1 ? 'these implications' : 'this implication') +
-                        ' against our data using localTests() from the dagitty R package' +
-                        ' (or DAGitty\'s in-browser test: Testable implications → Test against my data). ' +
-                        '[REPORT RESULTS HERE: state which implied independencies held and which were violated — ' +
-                        'e.g. the largest absolute test statistic and its p-value, or the proportion consistent with the data.]';
+                    s += '[REPORT CHECKS HERE: state whether these implications were tested, the test used, ' +
+                        'the sample size, the estimates and confidence intervals, and the raw and multiplicity-adjusted ' +
+                        'p-values; explain any implications not tested. Use localTests() from the dagitty R package ' +
+                        'or Testable implications → Test against my data. Failure to reject an implication does not ' +
+                        'establish independence or validate the causal directions.]';
                 }
                 lines.push(s);
             }
@@ -216,10 +266,9 @@
 
         // 5. The untestable assumptions (the crux)
         var assumptions = [];
-        assumptions.push('no unmeasured confounding (conditional exchangeability) — the diagram is correct and ' +
-            'complete, every common cause of the variables shown is itself included' +
-            (latent.length ? ' beyond the unobserved variables explicitly modelled' : '') +
-            ', and no relevant variable or arrow has been omitted');
+        assumptions.push('adequate causal structure — the diagram represents the relevant common causes ' +
+            '(including any explicitly modelled unobserved causes), and no omitted variable or arrow ' +
+            'invalidates the proposed identification strategy; drawing an unobserved cause does not remove its confounding');
         assumptions.push('the direction of every arrow reflects the true causal order');
         if (usingAdjustment) {
             assumptions.push('positivity — every level of the exposure has a non-zero probability of occurring ' +
@@ -228,6 +277,8 @@
         assumptions.push('consistency (a well-defined intervention) — the exposure corresponds to a ' +
             'sufficiently well-specified intervention that the outcome observed at a given exposure level equals ' +
             'the outcome that would occur if it were set to that level');
+        assumptions.push('no interference between study units, unless interference is explicitly represented ' +
+            'and accounted for in the target effect and analysis');
         assumptions.push('no measurement error or model misspecification that would distort these relationships — ' +
             'the variables are measured accurately enough, and the statistical model used' +
             (usingIV ? ' for estimation' : ' to adjust for the variables above') + ' is correctly specified');
@@ -260,8 +311,8 @@
         if (!ta) return;
         // Results were computed for one particular diagram; drop them silently
         // if the diagram has since changed (they would describe a different model).
-        if (_localTestResults && window.Model && Model.dag && Model.dag.toString() !== _localTestCode) {
-            _localTestResults = null; _localTestCode = null;
+        if (_localTestResults && window.Model && Model.dag && window.AnalysisModelKey(Model.dag) !== _localTestKey) {
+            _localTestResults = null; _localTestKey = null;
         }
         ta.value = generate();
     }
@@ -269,11 +320,14 @@
     /** Called by LocalTests with a ready-to-paste sentence, or null to clear. */
     function setLocalTestResults(text) {
         _localTestResults = text || null;
-        _localTestCode = (text && window.Model && Model.dag) ? Model.dag.toString() : null;
+        _localTestKey = (text && window.Model && Model.dag) ? window.AnalysisModelKey(Model.dag) : null;
         refresh();
     }
 
     function copyText() {
+        // A strategy change or recent graph edit can precede the debounced
+        // preview refresh. Always copy a statement for the current model.
+        refresh();
         var ta = document.getElementById('methods_text');
         if (!ta) return;
         var btn = document.getElementById('methods_copy_btn');
@@ -311,6 +365,8 @@
         if (window.DAGittyControl) {
             DAGittyControl.observe('graphchange', refreshDebounced);
         }
+        var kindEl = document.getElementById('causal_effect_kind');
+        if (kindEl) kindEl.addEventListener('change', refresh);
         // initial fill (after initialize() has built Model.dag)
         setTimeout(refresh, 120);
     });

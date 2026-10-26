@@ -12,7 +12,7 @@
     'use strict';
 
     var ROLES = [
-        { value: 'none',         label: 'none' },
+        { value: 'none',         label: 'other / no special role' },
         { value: 'source',       label: 'exposure (cause)' },
         { value: 'target',       label: 'outcome (effect)' },
         { value: 'adjustedNode', label: 'adjusted (controlled for)' },
@@ -24,13 +24,20 @@
 
     var TYPES = [
         { value: 'directed',   label: '→ causes' },
-        { value: 'bidirected', label: '↔ share an unmeasured cause' }
+        { value: 'bidirected', label: '↔ share an unmeasured cause' },
+        { value: 'undirected', label: '— direction unresolved' }
     ];
 
     var root = null, open = false, pendingFocus = null;
 
     function g() { return (window.Model && Model.dag) ? Model.dag : null; }
-    function clean(s) { return String(s || '').replace(/["{}]/g, '').trim(); }
+    function clean(s) { return String(s || '').trim(); }
+    function nameError(name) {
+        if (!name) return 'Enter a variable name.';
+        if (/[\\\x00-\x1f\x7f]/.test(name)) return 'Use a name without backslashes or control characters.';
+        if (name === 'graph' || name === 'node' || Object.prototype.hasOwnProperty.call(Object.prototype, name)) return '“' + name + '” is reserved by the diagram engine. Choose a different name.';
+        return '';
+    }
 
     /** The single role DAGitty stores for a vertex (roles are mutually exclusive). */
     function roleOf(graph, v) {
@@ -55,7 +62,8 @@
     }
 
     function edgeBetween(graph, a, b) {
-        var types = [Graph.Edgetype.Directed, Graph.Edgetype.Bidirected, Graph.Edgetype.Undirected];
+        var types = [Graph.Edgetype.Directed, Graph.Edgetype.Bidirected, Graph.Edgetype.Undirected,
+            Graph.Edgetype.Unspecified, Graph.Edgetype.PartDirected, Graph.Edgetype.PartUndirected];
         for (var i = 0; i < types.length; i++) {
             var e = graph.getEdge(a, b, types[i]) || graph.getEdge(b, a, types[i]);
             if (e) return e;
@@ -67,7 +75,8 @@
 
     function addVariable(name) {
         var graph = g(); name = clean(name);
-        if (!name) { announce('Enter a name for the new variable.'); return false; }
+        var error = nameError(name);
+        if (error) { announce(error); return false; }
         if (graph.getVertex(name)) { announce('A variable called ' + name + ' already exists.'); return false; }
         var p = placeNew(graph);
         DAGittyControl.newVertex(name, p[0], p[1]);
@@ -83,7 +92,8 @@
     function renameVariable(oldId, newName) {
         var graph = g(); newName = clean(newName);
         if (newName === oldId) return true;
-        if (!newName) { announce('The name cannot be empty; kept ' + oldId + '.'); return false; }
+        var error = nameError(newName);
+        if (error) { announce(error + ' Kept ' + oldId + '.'); return false; }
         if (graph.getVertex(newName)) { announce('A variable called ' + newName + ' already exists; kept ' + oldId + '.'); return false; }
         DAGittyControl.renameVertex(oldId, newName);
         announce('Renamed ' + oldId + ' to ' + newName + '.');
@@ -106,9 +116,15 @@
         if (from === to) { announce('An arrow cannot start and end at the same variable.'); return false; }
         var ex = edgeBetween(graph, from, to);
         if (ex) { announce(from + ' and ' + to + ' are already connected. Remove that arrow first to change it.'); return false; }
-        var et = type === 'bidirected' ? Graph.Edgetype.Bidirected : Graph.Edgetype.Directed;
+        var et = type === 'bidirected' ? Graph.Edgetype.Bidirected :
+            type === 'undirected' ? Graph.Edgetype.Undirected : Graph.Edgetype.Directed;
+        if (et === Graph.Edgetype.Directed && /^(dag|pdag)$/.test(graph.getType()) &&
+            graph.descendantsOf([graph.getVertex(to)]).some(function (v) { return v.id === from; })) {
+            announce('That arrow would create a directed cycle. A causal DAG cannot loop back to its starting variable.');
+            return false;
+        }
         DAGittyControl.getObservedGraph().addEdge(from, to, et);
-        announce('Added ' + from + (et === Graph.Edgetype.Bidirected ? ' ↔ ' : ' → ') + to + '.');
+        announce('Added ' + from + (et === Graph.Edgetype.Bidirected ? ' ↔ ' : et === Graph.Edgetype.Undirected ? ' — ' : ' → ') + to + '.');
         return true;
     }
 
@@ -135,8 +151,9 @@
                 '<button type="button" class="modal-close" aria-label="Close" id="se-close">✕</button>' +
               '</div>' +
               '<div class="modal-body">' +
-                '<p class="modal-intro">Everything you can draw on the canvas, as two tables you can edit with the keyboard. ' +
-                  'Changes apply to the diagram immediately and can be undone with Ctrl+Z.</p>' +
+                '<p class="modal-intro">Edit variables and connections with the keyboard. ' +
+                  'Changes apply immediately. Undo and Redo below affect the diagram; ' +
+                  'Ctrl+Z in a name field edits its text.</p>' +
                 '<div class="se-grid">' +
                   '<section aria-labelledby="se-vars-h">' +
                     '<h3 id="se-vars-h" class="se-h">Variables</h3>' +
@@ -163,6 +180,8 @@
                 '<p id="se-live" class="se-live" role="status" aria-live="polite"></p>' +
               '</div>' +
               '<div class="modal-footer">' +
+                '<button type="button" class="btn-secondary" id="se-undo">Undo</button>' +
+                '<button type="button" class="btn-secondary" id="se-redo">Redo</button>' +
                 '<button type="button" class="btn-secondary" id="se-tidy">Auto-arrange on canvas</button>' +
                 '<button type="button" id="se-done">Done</button>' +
               '</div>' +
@@ -171,6 +190,8 @@
 
         root.querySelector('#se-close').addEventListener('click', close);
         root.querySelector('#se-done').addEventListener('click', close);
+        root.querySelector('#se-undo').addEventListener('click', function () { if (window.UndoRedo) UndoRedo.undo(); });
+        root.querySelector('#se-redo').addEventListener('click', function () { if (window.UndoRedo) UndoRedo.redo(); });
         root.querySelector('#se-tidy').addEventListener('click', function () {
             if (window.generateSpringLayout) { generateSpringLayout(); announce('Variables re-arranged on the canvas.'); }
         });
@@ -223,6 +244,12 @@
         var graph = g();
         if (!graph) return;
         var names = _.pluck(graph.getVertices(), 'id').sort();
+        var undo = root.querySelector('#se-undo'), redo = root.querySelector('#se-redo');
+        undo.style.display = redo.style.display = window.UndoRedo ? '' : 'none';
+        undo.disabled = !window.UndoRedo || UndoRedo.stack.length < 2;
+        redo.disabled = !window.UndoRedo || !UndoRedo.future.length;
+        var focused = document.activeElement;
+        var focusKey = root.contains(focused) && focused.dataset ? focused.dataset.focus : null;
 
         // Variables
         var vb = root.querySelector('#se-vars tbody');
@@ -242,14 +269,21 @@
             inp.type = 'text'; inp.value = id; inp.className = 'se-name';
             inp.setAttribute('aria-label', 'Name of variable ' + id);
             inp.dataset.focus = 'name:' + id;
-            var commit = function () {
+            var commit = function (event) {
                 if (inp.value === id) return;
-                pendingFocus = '[data-focus="name:' + cssEsc(clean(inp.value) || id) + '"]';
-                if (!renameVariable(id, inp.value)) { inp.value = id; pendingFocus = null; }
+                if (!renameVariable(id, inp.value)) { inp.value = id; return; }
+                id = clean(inp.value);
+                inp.value = id;
+                // Keep row handlers valid until the scheduled render, including
+                // a second blur immediately after committing with Enter.
+                inp.dataset.focus = 'name:' + id;
+                sel.dataset.focus = 'role:' + id;
+                del.dataset.focus = 'remove:' + id;
+                if (event && event.type === 'keydown') pendingFocus = '[data-focus="name:' + cssEsc(id) + '"]';
             };
             inp.addEventListener('blur', commit);
             inp.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { e.preventDefault(); commit(); }
+                if (e.key === 'Enter') { e.preventDefault(); commit(e); }
                 if (e.key === 'Escape') { inp.value = id; e.stopPropagation(); }
             });
             tdName.appendChild(inp);
@@ -273,6 +307,7 @@
             var del = document.createElement('button');
             del.type = 'button'; del.className = 'btn-ghost se-remove'; del.textContent = '✕';
             del.setAttribute('aria-label', 'Remove variable ' + id);
+            del.dataset.focus = 'remove:' + id;
             del.addEventListener('click', function () { pendingFocus = '#se-new-var'; removeVariable(id); });
             tdDel.appendChild(del);
             tr.appendChild(tdDel);
@@ -293,11 +328,12 @@
         }
         edges.forEach(function (e) {
             var tr = document.createElement('tr');
-            var sym = e.directed === Graph.Edgetype.Directed ? '→' : e.directed === Graph.Edgetype.Bidirected ? '↔' : '—';
+            var symbols = { 0: '—', 1: '→', 2: '↔', 3: '○—○', 4: '○→', 5: '○—' };
+            var sym = symbols[e.directed] || Graph.Edgetype.Symbol[e.directed] || '?';
             [e.v1.id, sym, e.v2.id].forEach(function (t, i) {
                 var td = document.createElement('td');
                 td.textContent = t;
-                if (i === 1) { td.className = 'se-sym'; td.setAttribute('aria-label', sym === '→' ? 'causes' : sym === '↔' ? 'shares an unmeasured cause with' : 'is linked to'); }
+                if (i === 1) { td.className = 'se-sym'; td.setAttribute('aria-label', sym === '→' ? 'causes' : sym === '↔' ? 'shares an unmeasured cause with' : 'has an unresolved or undirected connection with'); }
                 tr.appendChild(td);
             });
             var tdDel = document.createElement('td');
@@ -312,10 +348,20 @@
 
         fillSelect(root.querySelector('#se-from'), names, true);
         fillSelect(root.querySelector('#se-to'), names, true);
+        var typeSel = root.querySelector('#se-type'), previousType = typeSel.value;
+        typeSel.innerHTML = '';
+        TYPES.forEach(function (t) {
+            if (t.value === 'undirected' && graph.getType() !== 'pdag') return;
+            if (t.value === 'bidirected' && graph.getType() === 'pdag') return;
+            var option = document.createElement('option');
+            option.value = t.value; option.textContent = t.label;
+            typeSel.appendChild(option);
+        });
+        if (Array.prototype.some.call(typeSel.options, function (o) { return o.value === previousType; })) typeSel.value = previousType;
         root.querySelector('#se-add-arrow button').disabled = names.length < 2;
 
-        if (pendingFocus) {
-            var f = root.querySelector(pendingFocus);
+        if (pendingFocus || focusKey) {
+            var f = root.querySelector(pendingFocus || '[data-focus="' + cssEsc(focusKey) + '"]');
             pendingFocus = null;
             if (f) f.focus();
         }
@@ -325,6 +371,12 @@
 
     function show() {
         if (!g()) return;
+        var code = document.getElementById('adj_matrix');
+        if (code && code.classList.contains('dirty')) {
+            if (window.Workspace) Workspace.toast('Your model code has unapplied changes. Update or save that code before editing the diagram as a list.', 'error');
+            code.focus();
+            return;
+        }
         ensureRoot();
         open = true;
         root.style.display = 'flex';
