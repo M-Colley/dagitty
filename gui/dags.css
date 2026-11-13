@@ -151,6 +151,8 @@ main {
   margin: 2px 0 0;
   padding: 4px;
   min-width: 15em;
+  max-height: calc(100dvh - var(--menu-h) - 16px);
+  overflow-y: auto;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -177,6 +179,13 @@ main {
 #menu li ul li a:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
 .menu-sep { height: 1px; background: var(--border); margin: 3px 4px; }
+.menu-group { padding: .55em .75em .25em !important; color: var(--muted); font-size: 11px; font-weight: 700; }
+
+/* Inset toolbar controls from their menu cells, whose reset has higher specificity. */
+#menu > li.menu-tools, #menu > #menu-mode-li, #menu > #menu-theme-li { padding: 0 .6em; }
+.sidebar-title { margin: 0; padding: 14px 14px 2px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.analysis-strategy-label { display: block; margin-bottom: .4em; font-weight: 600; }
+#causal_effect_kind { width: 100%; }
 
 /* Toolbar buttons (Undo/Redo) */
 .menu-tools {
@@ -346,14 +355,28 @@ label {
   padding: .35em 0 .3em;
   margin-bottom: .45em !important;
   border-bottom: 1px solid var(--border);
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: .2em !important;
 }
 
+.var-selection-hint { color: var(--primary-h); font-size: 11px; font-weight: 500; }
+
 #variable_label {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text);
   letter-spacing: -.01em;
+  overflow-wrap: anywhere;
 }
+
+#canvas svg g.vertex-selected > path:first-child { stroke: var(--primary); stroke-width: 3px; }
+.legend-role { display: inline-flex; justify-content: center; align-items: center; width: 26px; height: 22px; margin-right: 5px; border: 1px solid #000; border-radius: 50%; color: #000; font-size: 12px; font-weight: 700; vertical-align: middle; }
+.legend-exposure { background: #bed403; }
+.legend-outcome { background: #00a2e0; }
+.legend-adjusted { background: #fff; }
+#legend[data-style="semlike"] .legend-role { border-radius: 0; }
+#legend[data-style="semlike"] .legend-adjusted { background: #ccc; }
 
 .var-btn-row { margin-top: .5em !important; gap: .4em !important; }
 
@@ -1357,6 +1380,7 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
   #menu { height: auto; padding: 0 4px; }
   #menu > li > a { padding: 0 .7em; font-size: 12px; }
   .menu-tools { padding: 0 .25em; }
+  #menu > li.menu-tools, #menu > #menu-mode-li, #menu > #menu-theme-li { padding: 0 .3em; }
   .toolbar-label { display: none; }
   #menu-mode-li, #menu-theme-li { padding: 0 .25em; }
   .app-title { display: none; }
@@ -1406,6 +1430,25 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
 #rlegend > div { padding-bottom: 12px; }
 #rlegend h3:not(:first-child) { margin-top: 4px; }
 #rlegend .path-item, #rlegend .dcheck-item { line-height: 1.6; }
+.dcheck-text { min-width: 0; overflow-wrap: anywhere; }
+.dcheck-details summary { cursor: pointer; }
+.dcheck-details summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.dcheck-more { display: inline-block; margin-left: .3em; color: var(--primary-h); font-size: 11px; text-decoration: underline; }
+.dcheck-explanation { margin: .5em 0 0; }
+
+.wiz-var-table-wrap { width: 100%; overflow-x: auto; margin: .8em 0; }
+.wiz-var-table { width: 100%; min-width: 470px; border-collapse: collapse; font-size: 12px; }
+.wiz-var-table caption { text-align: left; font-weight: 600; padding-bottom: .5em; }
+.wiz-var-table th, .wiz-var-table td { padding: .5em; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.wiz-var-table th { color: var(--muted); font-weight: 600; }
+.wiz-var-table tbody th { max-width: 15em; color: var(--text); }
+.wiz-var-actions { display: flex; flex-wrap: wrap; gap: .4em; }
+.wiz-add-row .wiz-input-label { display: flex; flex: 1 1 10em; flex-direction: column; gap: .35em; align-self: stretch; font-weight: 600; }
+.wiz-add-row .wiz-input-label > label { color: inherit; font-weight: inherit; }
+.wiz-add-row .wiz-input-label input, .wiz-add-row .wiz-input-label select { width: 100%; }
+.wiz-add-row .wiz-input-label .wiz-input { flex: 0 0 auto; }
+.wiz-add-row { align-items: flex-end; }
+.wiz-edit-status { margin: .7em 0; color: var(--primary-h); }
 .modal-header { padding: 18px 22px; }
 .modal-body { padding: 18px 22px; }
 .modal-footer { padding: 14px 22px; }

@@ -222,10 +222,12 @@ var GraphGUI_SVG = Class.extend({
 		if( sty.decoration[vertex_type+"node"] ){
 			i=0
 			while(  sty.decoration[vertex_type+"node"][i] ){
-				e = document.createElementNS( svgns, "path" )
-				for( f in sty.decoration[vertex_type+"node"][i] ){
-					e.setAttribute( f, sty.decoration[vertex_type+"node"][i][f] )
+				var decoration = sty.decoration[vertex_type+"node"][i]
+				e = document.createElementNS( svgns, decoration.text ? "text" : "path" )
+				for( f in decoration ){
+					if( f !== "text" ) e.setAttribute( f, decoration[f] )
 				}
+				if( decoration.text ) e.textContent = decoration.text
 				el.dom.appendChild( e )
 				i++
 			}
@@ -296,6 +298,7 @@ var GraphGUI_SVG = Class.extend({
 		this.unmarkVertexShape()
 	},
 	markVertexShape : function( el ){
+		el.dom.classList.add("vertex-selected")
 		el.previous_stroke  = el.dom.firstChild.getAttribute( "stroke",
 			this.getStyle().style.node.stroke )
 		el.previous_stroke_width  = el.dom.firstChild.getAttribute( "stroke-width",
@@ -310,6 +313,7 @@ var GraphGUI_SVG = Class.extend({
 	unmarkVertexShape : function( el ){
 		if( !el ) el = this.marked_vertex_shape
 		if( el && el.dom ){
+			el.dom.classList.remove("vertex-selected")
 			el.dom.firstChild.setAttribute( "stroke", el.previous_stroke )
 			el.dom.firstChild.setAttribute( "stroke-width", el.previous_stroke_width )
 		}

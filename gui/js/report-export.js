@@ -46,7 +46,8 @@
         if (exposure.length && outcome.length && !cyclic && kind !== 'instrument') {
             var sufficient = null;
             var isOdds = kind === 'adj_causalodds';
-            var supported = !(kind === 'adj_direct' && (selected.length || g.getType() !== 'dag')) &&
+            var supported = !(kind === 'adj_total' && ['dag', 'pdag', 'mag', 'pag'].indexOf(g.getType()) === -1) &&
+                !(kind === 'adj_direct' && (selected.length || g.getType() !== 'dag')) &&
                 !(isOdds && (g.getType() !== 'dag' || exposure.length !== 1 || outcome.length !== 1 || selected.length !== 1));
             try {
                 if (supported) sufficient = isOdds ? GraphAnalyzer.isAdjustmentSetCausalOddsRatio(g)
@@ -165,7 +166,7 @@
 
         h.push('<h2>Variables</h2><table><tbody>' +
             roleRow('Exposure (cause)', d.roles.exposure) + roleRow('Outcome (effect)', d.roles.outcome) +
-            roleRow('Adjusted (controlled for)', d.roles.adjusted) + roleRow('Sample selection', d.roles.selected) +
+            roleRow('Adjusted (controlled for)', d.roles.adjusted) + roleRow('Selection node', d.roles.selected) +
             roleRow('Unobserved (latent)', d.roles.latent) + roleRow('Other', d.roles.other) + '</tbody></table>');
 
         h.push('<h2>Identification</h2>');

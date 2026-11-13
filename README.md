@@ -15,7 +15,8 @@ approachable for people new to causal inference, while keeping all of the origin
 - 🧭 **Interactive guided tutorial** for first-time users (*Help → Tour the interface*, and a one-time prompt on first visit)
 - 🪜 **Guided DAG builder** — start with an exposure and outcome, add measured or unmeasured
   variables and optional study selection, then review the arrows suggested by your chosen roles.
-  Uncertain variables start without assumed arrows; drafts survive closing the builder.
+  Edit added variables in a table; drafts survive closing the builder. Prompts encourage concrete
+  exposure comparisons and time windows. Uncertain variables start without assumed arrows.
 - 🛤️ **Paths panel** — lists up to 40 paths between exposure and outcome, says whether each is causal or biasing
   and open or blocked, and explains *why* (*“Open because you adjusted for Z, a collider on this path”*);
   hovering a path highlights it on the canvas
@@ -31,13 +32,13 @@ approachable for people new to causal inference, while keeping all of the origin
 - ⌨️ **Edit as a list** — a keyboard- and screen-reader-operable alternative to the canvas: tables of
   variables (with roles) and arrows that edit the live diagram
 - 📝 **"Assumptions for your paper"** — a one-click, plain-language statement of the (often untestable) assumptions your diagram requires to read a result as causal, ready to paste into a methods or limitations section
-- 💬 Plain-language analysis output (e.g. *“Your chosen controls are sufficient for this analysis under the diagram”* instead of *“Correctly adjusted”*)
+- 💬 Plain-language analysis output, with complete alternative adjustment sets beside insufficient-control warnings
 - 🩺 **Diagram check** — names the specific mistake and the variable involved (*“M sits on a causal pathway
   from X to Y — controlling for it removes part of the effect you are trying to measure”*): mediators,
-  colliders, arrows drawn the wrong way round, sample selection on a common effect
+  colliders, arrows drawn the wrong way round, sample selection on a common effect. Long explanations expand on demand
 - 🧰 Beginner / Advanced mode, undo / redo, empty-canvas hints, and inline help on every concept
 - 💾 **Browser autosave** — when browser storage is available, the diagram can be restored on the next visit;
-  open a saved `.dag` file from the Model menu or by dragging it onto the page
+  open a saved `.dag` file from the File menu or by dragging it onto the page
 - 🔗 **Copy shareable link** — the whole diagram travels inside the URL, so a collaborator opening it
   sees exactly your model. Nothing is uploaded anywhere
 - 📂 Machine-readable model code plus PNG / JPEG / SVG / LaTeX / R (dagitty + ggdag) export
@@ -52,7 +53,9 @@ theme choices when the OS theme changes, and made publication layouts account fo
 and arrows that skip intermediate variables. SVG export preserves uncertain PAG endpoints; R code in
 the dialog and report uses the same generator and retains the graph's roles and coordinates.
 
-The interface has a full-width toolbar, clearer section headings and more room for analysis text.
+The interface separates setup on the left from diagnostics and implications on the right, with
+File and Export menus, grouped Help, and auto-arrange beside Undo/Redo. Canvas role labels use
+E (exposure), O (outcome), and A (adjusted); auto-arrange keeps disconnected variables nearby.
 On small screens, controls and analysis appear below the canvas. Layout edits are autosaved too;
 unapplied model-code drafts are protected when opening files or replacing the diagram.
 

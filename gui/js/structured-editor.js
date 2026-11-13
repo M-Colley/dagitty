@@ -16,7 +16,7 @@
         { value: 'source',       label: 'exposure (cause)' },
         { value: 'target',       label: 'outcome (effect)' },
         { value: 'adjustedNode', label: 'adjusted (controlled for)' },
-        { value: 'selectedNode', label: 'sample selection' },
+        { value: 'selectedNode', label: 'selection node' },
         { value: 'latentNode',   label: 'unobserved (latent)' }
     ];
     var ROLE_LABEL = {};

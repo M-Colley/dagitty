@@ -63,8 +63,8 @@
             target: '#model_data',
             title: 'Save, share, reproduce',
             body: 'Your model is plain text. <strong>Download</strong> it here and reopen it later with ' +
-                  '<em>Model → Open model file…</em> (or just drag the file onto the page). ' +
-                  '<em>Model → Copy shareable link</em> packs the whole diagram into a URL — nothing is uploaded anywhere. ' +
+                  '<em>File → Open model file…</em> (or just drag the file onto the page). ' +
+                  '<em>File → Copy shareable link</em> packs the whole diagram into a URL — nothing is uploaded anywhere. ' +
                   'Browser autosave can also restore your diagram when storage is available. Download a copy for a durable record.'
         },
         {

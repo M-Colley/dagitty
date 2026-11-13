@@ -127,7 +127,7 @@
         var url = location.origin + location.pathname + '#dag=' + encodeModel(code);
         if (url.length > MAX_LINK) {
             toast('This diagram is too large for a link (' + url.length + ' characters). ' +
-                  'Use Model → Download instead.', 'error');
+                  'Use File → Download instead.', 'error');
             return;
         }
         var done = function (ok) {

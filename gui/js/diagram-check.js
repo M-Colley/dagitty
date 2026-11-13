@@ -140,7 +140,7 @@
                     text: ' sits on a causal pathway from ' + list(exposures) + ' to ' + list(outcomes) +
                           ' (a mediator). Controlling for it removes part of the very effect you are ' +
                           'trying to measure. Leave it unadjusted for the total effect — or switch the ' +
-                          'strategy above to "direct effect" if that is what you want.' });
+                          'strategy in Analysis setup to "direct effect" if that is what you want.' });
                 return;
             }
             if (onCausalPath) return;   // intended when estimating a direct effect
@@ -172,7 +172,7 @@
                 out.push({ level: 'warn', subject: a,
                     text: ' is a common effect (a "collider") of ' + pair[0] + ' and ' + pair[1] +
                           '. Controlling for it can open a biasing path between those causes. Other controls ' +
-                          'may block that path; check the Causal-effect panel for whether the entire set is sufficient.' });
+                          'may block that path; check Causal effect identification for whether the entire set is sufficient.' });
             }
         });
 
@@ -191,7 +191,7 @@
                 out.push({ level: 'info', subject: s,
                     text: ' decides who is in your sample and is affected by ' +
                           (fromE ? list(exposures) : list(outcomes)) +
-                          '. Check the adjustment advice below — selection can bias the estimate.' });
+                          '. Check Causal effect identification for adjustment advice — selection can bias the estimate.' });
             }
         });
 
@@ -214,6 +214,62 @@
     // ── Rendering ─────────────────────────────────────────────────────────
 
     var ICON = { error: '✕', warn: '!', info: 'i', ok: '✓' };
+    var expandedFindings = Object.create(null);
+
+    function appendFindingText(body, subject, text) {
+        if (subject) {
+            var strong = document.createElement('strong');
+            strong.textContent = subject;
+            body.appendChild(strong);
+        }
+        body.appendChild(document.createTextNode(text));
+    }
+
+    function findingBody(f) {
+        if ((f.subject || '').length + f.text.length <= 220) {
+            var body = document.createElement('span');
+            body.className = 'dcheck-text';
+            appendFindingText(body, f.subject, f.text);
+            return body;
+        }
+
+        var split = f.text.indexOf('. ');
+        split = split === -1 ? f.text.length : split + 1;
+        if (split > 180) {
+            var word = f.text.lastIndexOf(' ', 180);
+            split = word > 0 ? word : 180;
+        }
+        // A long single sentence still gets a compact preview. The complete
+        // remaining text is kept in the disclosure, never dropped.
+        var preview = f.text.slice(0, split);
+        var remainder = f.text.slice(split);
+        if (!remainder.trim()) {
+            var full = document.createElement('span');
+            full.className = 'dcheck-text';
+            appendFindingText(full, f.subject, f.text);
+            return full;
+        }
+        var key = f.level + '\u0000' + (f.subject || '') + '\u0000' + f.text;
+        var details = document.createElement('details');
+        details.className = 'dcheck-text dcheck-details';
+        details.open = !!expandedFindings[key];
+        var summary = document.createElement('summary');
+        appendFindingText(summary, f.subject, preview + (/\.$/.test(preview) ? '' : '…'));
+        var more = document.createElement('span');
+        more.className = 'dcheck-more';
+        more.textContent = details.open ? ' Show less' : ' Show more';
+        summary.appendChild(more);
+        details.appendChild(summary);
+        var explanation = document.createElement('p');
+        explanation.className = 'dcheck-explanation';
+        explanation.textContent = remainder.trim();
+        details.appendChild(explanation);
+        details.addEventListener('toggle', function () {
+            expandedFindings[key] = details.open;
+            more.textContent = details.open ? ' Show less' : ' Show more';
+        });
+        return details;
+    }
 
     function render() {
         var host = document.getElementById('diagram_check');
@@ -234,15 +290,7 @@
             badge.textContent = ICON[f.level] || '·';
             li.appendChild(badge);
 
-            var body = document.createElement('span');
-            body.className = 'dcheck-text';
-            if (f.subject) {
-                var s = document.createElement('strong');
-                s.textContent = f.subject;
-                body.appendChild(s);
-            }
-            body.appendChild(document.createTextNode(f.text));
-            li.appendChild(body);
+            li.appendChild(findingBody(f));
             ul.appendChild(li);
         });
         host.appendChild(ul);

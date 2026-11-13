@@ -124,7 +124,9 @@
         var kind = kindEl ? kindEl.value : 'adj_total';
         var expOutBase = list(exposures) + ' on ' + list(outcomes);
         var usingIV = (kind === 'instrument');
-        var unsupported = kind === 'adj_direct' && (selected.length || graphType !== 'dag')
+        var unsupported = kind === 'adj_total' && ['dag', 'pdag', 'mag', 'pag'].indexOf(graphType) === -1
+            ? 'DAGitty supports total-effect adjustment analysis for DAGs, PDAGs, MAGs and PAGs only.'
+            : kind === 'adj_direct' && (selected.length || graphType !== 'dag')
             ? 'DAGitty does not support direct-effect adjustment analysis for this graph type or with selection nodes.'
             : kind === 'adj_causalodds' && (graphType !== 'dag' || exposures.length !== 1 || outcomes.length !== 1 || selected.length !== 1)
                 ? 'The causal-odds-ratio analysis requires a DAG with exactly one exposure, one outcome and one selection node.'

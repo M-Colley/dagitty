@@ -22,8 +22,9 @@ DAGitty.stylesheets.original = {
 				puredirectpath_inactive : { "stroke-width": 3 }
 			},
 			decoration : {
-				exposurenode : [ {d:"M-4,-6L7,0L-4,6Z", fill:"#000000"} ],
-				outcomenode : [ {d:"M-2,-6L2,-6L2,6L-2,6Z", fill:"#000000"} ],
+				exposurenode : [ {text:"E", "class":"node-role", "aria-label":"Exposure", x:0, y:0, dy:".35em", "text-anchor":"middle", "font-size":12, "font-weight":"bold", fill:"#000000", stroke:"none"} ],
+				outcomenode : [ {text:"O", "class":"node-role", "aria-label":"Outcome", x:0, y:0, dy:".35em", "text-anchor":"middle", "font-size":12, "font-weight":"bold", fill:"#000000", stroke:"none"} ],
+				adjustednode : [ {text:"A", "class":"node-role", "aria-label":"Adjusted", x:0, y:0, dy:".35em", "text-anchor":"middle", "font-size":12, "font-weight":"bold", fill:"#000000", stroke:"none"} ],
 				directedpath : [ { 'class' : "arrowfront", 'd': "M-1,0L15,5L15,-5Z", fill : "white" } ],
 				bidirectedpath : [
 					{ 'class' : "arrowfront", 'd': "M-1,0L15,5L15,-5Z", fill : "white" },

@@ -11,6 +11,7 @@ var Base = {
  		'd' : 'M [rx], 0 L [rx],[dy] L -[rx],[dy] L -[rx],-[ry] L [rx],-[ry] Z',
 		stroke : "#000000" },
 	adjustednode : { fill : "#cccccc",
+		'd' : 'M [rx], 0 L [rx],[dy] L -[rx],[dy] L -[rx],-[ry] L [rx],-[ry] Z',
 		stroke : "#000000" },
 	latentnode : { 
 		'd' : 'M 0 0 m [rx], 0 a [rx],[ry] 0 1,1 -[dx],0 a [rx],[ry] 0 1,1 [dx],0', stroke : "black" },
@@ -29,8 +30,9 @@ var Base = {
 }
 
 var Decoration = {
-	exposurenode : [ {d:"M-4,-6L7,0L-4,6Z", fill:"#000000", transform: "translate(0,18)" } ],
-	outcomenode : [ {d:"M-2,-6L2,-6L2,6L-2,6Z", fill:"#000000", transform: "translate(0,18)" } ],
+	exposurenode : [ {text:"E", "class":"node-role", "aria-label":"Exposure", x:0, y:18, dy:".35em", "text-anchor":"middle", "font-size":12, "font-weight":"bold", fill:"#000000", stroke:"none" } ],
+	outcomenode : [ {text:"O", "class":"node-role", "aria-label":"Outcome", x:0, y:18, dy:".35em", "text-anchor":"middle", "font-size":12, "font-weight":"bold", fill:"#000000", stroke:"none" } ],
+	adjustednode : [ {text:"A", "class":"node-role", "aria-label":"Adjusted", x:0, y:18, dy:".35em", "text-anchor":"middle", "font-size":12, "font-weight":"bold", fill:"#000000", stroke:"none" } ],
 	directedpath : [
 		{ 'class' : "arrowfront", 'd': "M-1.5,0L5,5M-1.5,0L5,-5" }
 	],

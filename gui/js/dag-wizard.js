@@ -33,7 +33,7 @@
         var taken = [];
         if (current !== 'exposure') taken.push(state.exposure);
         if (current !== 'outcome') taken.push(state.outcome);
-        state.others.forEach(function (o) { taken.push(o.name); });
+        state.others.forEach(function (o, i) { if (current !== i) taken.push(o.name); });
         if (current !== 'selection' && state.selection.enabled) taken.push(state.selection.name);
         return taken.indexOf(name) >= 0 ? 'Each variable needs a different name: “' + name + '” is already in use.' : '';
     }
@@ -66,7 +66,8 @@
                 return '' +
                   '<p class="wiz-lead">The <span class="wiz-term">exposure</span> is the cause whose effect you want ' +
                   'to estimate — the "treatment", intervention, or risk factor.</p>' +
-                  '<p class="wiz-eg">e.g. <em>a drug, a policy, hours of screen time, a genotype.</em></p>' +
+                  '<p class="wiz-eg">e.g. <em>taking a specified drug versus no treatment, or one additional hour of daily screen time over two weeks.</em></p>' +
+                  '<p class="wiz-sub">Choose a clear comparison and time window for your research question. You can keep the variable name short.</p>' +
                   '<label class="wiz-input-label">Exposure variable name' +
                     '<input type="text" id="wiz-exposure" class="wiz-input" placeholder="e.g. Treatment" ' +
                     'value="' + esc(state.exposure) + '" autocomplete="off"></label>';
@@ -83,7 +84,7 @@
                 return '' +
                   '<p class="wiz-lead">The <span class="wiz-term">outcome</span> is the effect you\'re trying to ' +
                   'understand — what the exposure might change.</p>' +
-                  '<p class="wiz-eg">e.g. <em>recovery, test score, disease status, churn.</em></p>' +
+                  '<p class="wiz-eg">e.g. <em>recovery after four weeks, test score at the end of term, disease status.</em></p>' +
                   '<label class="wiz-input-label">Outcome variable name' +
                     '<input type="text" id="wiz-outcome" class="wiz-input" placeholder="e.g. Recovery" ' +
                     'value="' + esc(state.outcome) + '" autocomplete="off"></label>';
@@ -119,53 +120,68 @@
                     '<div><dt>Other / not sure yet</dt><dd>no arrows added automatically; connect it in the editor.</dd></div>' +
                   '</dl>' +
                   '<div class="wiz-add-row">' +
-                    '<input type="text" id="wiz-var-name" class="wiz-input" placeholder="Variable name" aria-label="Other variable name" autocomplete="off" value="' + esc(state.pending.name) + '">' +
-                    '<select id="wiz-var-role" class="wiz-input" aria-label="Suggested role">' +
+                    '<label class="wiz-input-label">Variable name<input type="text" id="wiz-var-name" class="wiz-input" placeholder="Variable name" autocomplete="off"></label>' +
+                    '<div class="wiz-input-label"><label for="wiz-var-role">Node type</label><select id="wiz-var-role" class="wiz-input">' +
                       '<option value="other">Other / not sure yet</option>' +
                       '<option value="confounder">Confounder</option>' +
                       '<option value="mediator">Mediator</option>' +
                       '<option value="collider">Collider</option>' +
-                    '</select>' +
+                    '</select></div>' +
                     '<label class="wiz-check wiz-measured"><input type="checkbox" id="wiz-var-measured" checked> measured</label>' +
                     '<button type="button" class="wiz-add-btn" id="wiz-add-var">Add</button>' +
+                    '<button type="button" class="btn-secondary" id="wiz-cancel-edit" hidden>Cancel edit</button>' +
                   '</div>' +
-                  '<ul class="wiz-chiplist" id="wiz-var-list"></ul>';
+                  '<p id="wiz-edit-status" class="wiz-edit-status" role="status"></p>' +
+                  '<div id="wiz-var-list" class="wiz-var-table-wrap" role="region" aria-label="Other variables; scroll horizontally on small screens" tabindex="0"></div>';
             },
             focus: 'wiz-var-name',
             mount: function () {
-                root.querySelector('#wiz-var-role').value = state.pending.role;
-                root.querySelector('#wiz-var-measured').checked = state.pending.measured;
+                renderVarForm();
                 var add = function () {
                     var nameEl = root.querySelector('#wiz-var-name');
                     var name = clean(nameEl.value);
                     var role = root.querySelector('#wiz-var-role').value;
                     var measured = root.querySelector('#wiz-var-measured').checked;
-                    var error = nameError(name);
+                    var error = nameError(name, state.editing ? state.editing.index : null);
                     if (error) { flash(nameEl); announce(error); nameEl.focus(); return; }
-                    state.others.push({ name: name, role: role, measured: measured });
-                    state.pending = { name: '', role: 'other', measured: true };
-                    nameEl.value = ''; nameEl.focus();
-                    root.querySelector('#wiz-var-role').value = 'other';
-                    root.querySelector('#wiz-var-measured').checked = true;
+                    var variable = { name: name, role: role, measured: measured };
+                    if (state.editing) {
+                        var oldName = state.others[state.editing.index].name;
+                        state.others[state.editing.index] = variable;
+                        if (oldName !== name) {
+                            if (state.selection.causes[oldName]) state.selection.causes[name] = true;
+                            delete state.selection.causes[oldName];
+                        }
+                        state.editing = null;
+                    } else {
+                        state.others.push(variable);
+                        state.pending = { name: '', role: 'other', measured: true };
+                    }
+                    renderVarForm();
+                    nameEl.focus();
                     var oldError = root.querySelector('.wiz-error');
                     if (oldError) oldError.remove();
                     renderVarList();
                 };
                 root.querySelector('#wiz-add-var').addEventListener('click', add);
+                root.querySelector('#wiz-cancel-edit').addEventListener('click', function () {
+                    state.editing = null;
+                    renderVarForm();
+                    var oldError = root.querySelector('.wiz-error');
+                    if (oldError) oldError.remove();
+                    root.querySelector('#wiz-var-name').focus();
+                });
                 root.querySelector('#wiz-var-name').addEventListener('keydown', function (e) {
                     if (e.key === 'Enter') { e.preventDefault(); add(); }
                 });
                 renderVarList();
             },
-            valid: function () { return !clean(root.querySelector('#wiz-var-name').value); },
-            invalidMsg: function () { return 'Choose Add to include the variable you typed, or clear its name to continue.'; },
-            onLeave: function () {
-                state.pending = {
-                    name: root.querySelector('#wiz-var-name').value,
-                    role: root.querySelector('#wiz-var-role').value,
-                    measured: root.querySelector('#wiz-var-measured').checked
-                };
-            }
+            valid: function () { return !state.editing && !clean(root.querySelector('#wiz-var-name').value); },
+            invalidMsg: function () {
+                return state.editing ? 'Choose Save changes or Cancel edit before continuing.' :
+                    'Choose Add to include the variable you typed, or clear its name to continue.';
+            },
+            onLeave: saveVarDraft
         },
         {
             title: 'Did selection into the sample play a role?',
@@ -266,26 +282,66 @@
 
     // ── Sub-renderers ─────────────────────────────────────────────────────────
 
+    function saveVarDraft() {
+        var draft = state.editing || state.pending;
+        draft.name = root.querySelector('#wiz-var-name').value;
+        draft.role = root.querySelector('#wiz-var-role').value;
+        draft.measured = root.querySelector('#wiz-var-measured').checked;
+    }
+
+    function renderVarForm() {
+        var draft = state.editing || state.pending;
+        root.querySelector('#wiz-var-name').value = draft.name;
+        root.querySelector('#wiz-var-role').value = draft.role;
+        root.querySelector('#wiz-var-measured').checked = draft.measured;
+        root.querySelector('#wiz-add-var').textContent = state.editing ? 'Save changes' : 'Add';
+        root.querySelector('#wiz-cancel-edit').hidden = !state.editing;
+        root.querySelector('#wiz-edit-status').textContent = state.editing ?
+            'Editing ' + state.others[state.editing.index].name + '. Save changes to update this variable.' : '';
+    }
+
     function renderVarList() {
-        var ul = root.querySelector('#wiz-var-list');
-        if (!ul) return;
-        ul.innerHTML = '';
+        var list = root.querySelector('#wiz-var-list');
+        if (!list) return;
+        list.innerHTML = '';
         if (!state.others.length) {
-            ul.innerHTML = '<li class="wiz-empty">No other variables yet (optional).</li>';
+            list.innerHTML = '<p class="wiz-empty">No other variables yet (optional).</p>';
             return;
         }
+        list.innerHTML = '<table class="wiz-var-table"><caption>Other variables</caption>' +
+            '<thead><tr><th scope="col">Variable name</th><th scope="col">Node type</th>' +
+            '<th scope="col">Measured</th><th scope="col">Actions</th></tr></thead><tbody></tbody></table>';
+        var body = list.querySelector('tbody');
+        var labels = { other: 'Other / not sure yet', confounder: 'Confounder', mediator: 'Mediator', collider: 'Collider' };
         state.others.forEach(function (o, i) {
-            var li = document.createElement('li');
-            li.className = 'wiz-chip';
-            li.innerHTML = '<span>' + esc(o.name) + '</span><span class="wiz-chip-role">' + o.role +
-                (o.measured ? ' · measured' : ' · unobserved') + '</span><button type="button" aria-label="Remove ' + esc(o.name) + '">✕</button>';
-            li.querySelector('button').addEventListener('click', function () {
+            var row = document.createElement('tr');
+            row.innerHTML = '<th scope="row">' + esc(o.name) + '</th><td>' + labels[o.role] +
+                '</td><td>' + (o.measured ? 'Yes' : 'No (unobserved)') + '</td><td class="wiz-var-actions">' +
+                '<button type="button" data-action="edit" aria-label="Edit ' + esc(o.name) + '">Edit</button> ' +
+                '<button type="button" data-action="remove" aria-label="Remove ' + esc(o.name) + '">Remove</button></td>';
+            row.querySelector('[data-action="edit"]').addEventListener('click', function () {
+                if (state.editing) {
+                    announce('Save changes or Cancel edit before editing another variable.');
+                } else {
+                    saveVarDraft();
+                    state.editing = { index: i, name: o.name, role: o.role, measured: o.measured };
+                    renderVarForm();
+                }
+                root.querySelector('#wiz-var-name').focus();
+            });
+            row.querySelector('[data-action="remove"]').addEventListener('click', function () {
+                saveVarDraft();
                 var removed = state.others.splice(i, 1)[0];
                 if (removed) delete state.selection.causes[removed.name];
+                if (state.editing) {
+                    if (state.editing.index === i) state.editing = null;
+                    else if (state.editing.index > i) state.editing.index--;
+                }
+                renderVarForm();
                 renderVarList();
                 root.querySelector('#wiz-var-name').focus();
             });
-            ul.appendChild(li);
+            body.appendChild(row);
         });
     }
 
@@ -478,7 +534,7 @@
         returnFocus = document.activeElement;
         if (!state) state = {
             step: 0, mode: 'beginner', exposure: '', outcome: '', others: [],
-            pending: { name: '', role: 'other', measured: true }, wantTour: true,
+            pending: { name: '', role: 'other', measured: true }, editing: null, wantTour: true,
             selection: { enabled: false, name: 'Selected', causes: Object.create(null) }
         };
         root.style.display = 'flex';

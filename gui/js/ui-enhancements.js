@@ -93,13 +93,17 @@
     // rules below did, and as the methods statement did — turns "no set
     // containing your mediator exists" into "the effect is not identifiable",
     // which is simply false. So compute the unconstrained answer on a copy of
-    // the graph with the current adjustments cleared, and show both.
+    // the graph with the current adjustments cleared, and show alternatives.
     window.AdjustmentSets = {
         /** Minimal sufficient sets ignoring the user's current adjustments, as
          *  sorted arrays of ids; [] = none exists; [[]] = nothing needed;
          *  null = not applicable (no exposure/outcome, unsupported graph). */
         minimal: function (g, kind) {
             if (!g || !g.getSources().length || !g.getTargets().length) return null;
+            if (kind !== 'total' && kind !== 'direct') return null;
+            if (GraphAnalyzer.containsCycle(g)) return null;
+            if (kind === 'direct' && (g.getType() !== 'dag' || g.getSelectedNodes().length)) return null;
+            if (kind === 'total' && ['dag', 'pdag', 'mag', 'pag'].indexOf(g.getType()) === -1) return null;
             var h = g.clone();
             h.getAdjustedNodes().slice().forEach(function (v) { h.removeAdjustedNode(v); });
             try {
@@ -127,11 +131,10 @@
         return ul;
     }
 
-    /** Extra paragraph for the causal-effect panel when the user has adjusted
-     *  for something: what the minimal sets are WITHOUT that constraint. */
+    /** Put actionable alternatives immediately after the adjustment verdict.
+     * Each row is a complete replacement, not an addition to current controls. */
     function _unconstrainedNote(g, kind) {
         var adjusted = _.pluck(g.getAdjustedNodes(), 'id').sort();
-        if (!adjusted.length || g.getSelectedNodes().length) return null;
         var sets = AdjustmentSets.minimal(g, kind);
         if (!sets) return null;
         var label = kind + ' effect';
@@ -142,18 +145,22 @@
         var p = document.createElement('p');
         wrap.appendChild(p);
         if (!sets.length) {
-            p.textContent = 'No choice of controls identifies the ' + label + ' in this diagram — ' +
-                'adjustment alone cannot recover it.';
+            p.textContent = 'No set of measured controls satisfies the ' + label +
+                ' adjustment criterion under this diagram. Adjustment alone cannot identify this effect.';
+            if (g.getSelectedNodes().length) p.textContent += ' Review the selection mechanism and study design.';
         } else if (sets.length === 1 && sets[0].length === 0) {
+            if (!adjusted.length) return null;
             p.textContent = (sufficient ? 'None of these controls is actually needed: '
-                                        : 'Remove ' + (adjusted.length > 1 ? 'these controls' : 'this control') + ' instead: ') +
-                'the ' + label + ' can be estimated without any adjustment.';
+                                        : 'Clear the Adjusted mark from ' + adjusted.join(', ') + ': ') +
+                'the ' + label + ' can be estimated without control variables under this diagram.';
         } else if (AdjustmentSets.isOneOf(g, sets)) {
             return null;                          // already minimal — nothing to add
         } else {
             p.textContent = sufficient
-                ? 'A smaller set would also do. Ignoring your current choice, the minimal sufficient sets are:'
-                : 'Sets that would work instead (ignoring your current choice):';
+                ? 'A smaller set would also suffice. Each row below is a complete minimal adjustment set:'
+                : (adjusted.length ? 'Replace your chosen controls with one complete set below.'
+                                   : 'Choose one complete adjustment set below.') +
+                  ' Mark only the variables in that row as Adjusted; the rows are alternatives.';
             wrap.appendChild(_setsList(sets));
         }
         return wrap;
@@ -223,9 +230,17 @@
                 n.textContent = n.textContent.replace(PLAIN_CONSTRAINED_EMPTY[0], PLAIN_CONSTRAINED_EMPTY[1]);
         }
         _plainifyEl(el);
-        if (hasAdj && (kind === 'total' || kind === 'direct') && !GraphAnalyzer.containsCycle(g)) {
+        if (g && (kind === 'total' || kind === 'direct') && !GraphAnalyzer.containsCycle(g)) {
             var note = _unconstrainedNote(g, kind);
-            if (note) el.appendChild(note);
+            if (note) {
+                // The original panel's lists are constrained to include the
+                // current controls. Avoid presenting two competing answers.
+                el.querySelectorAll('.adj-set-summary, .adj-set-list').forEach(function (node) { node.remove(); });
+                var verdicts = el.querySelectorAll('.warning, .assurance');
+                var verdict = verdicts[verdicts.length - 1];
+                if (verdict) verdict.after(note);
+                else el.appendChild(note);
+            }
         }
     }
 
@@ -449,6 +464,7 @@
                 else if (e.key === 'ArrowLeft') { e.preventDefault(); (topItems[(idx-1+topItems.length)%topItems.length].querySelector(':scope>a')||{focus:function(){}}).focus(); }
                 else if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
+                    menu.querySelectorAll('li ul').forEach(function (other) { other.style.display = ''; });
                     var ul = li.querySelector('ul');
                     if (ul) { ul.style.display = 'block'; var f = ul.querySelector('a'); if (f) f.focus(); }
                 } else if (e.key === 'Escape') {
@@ -1199,7 +1215,7 @@
         if (lbl) {
             for (var i = 0; i < lbl.childNodes.length; i++) {
                 if (lbl.childNodes[i].nodeType === Node.TEXT_NODE) {
-                    lbl.childNodes[i].textContent = 'sample selection'; break;
+                    lbl.childNodes[i].textContent = 'selection node'; break;
                 }
             }
         }

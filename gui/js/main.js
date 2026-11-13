@@ -77,6 +77,10 @@ var GUI = {
 	refresh_variable_status : function(){
 		var vid = document.getElementById("variable_id").value
 		document.getElementById("variable_label").innerText = vid
+		var selectedHint = document.getElementById("variable_selection_hint")
+		if( selectedHint ) selectedHint.textContent = vid ? "Editing variable" : "Select a variable on the canvas"
+		var selectedRow = document.querySelector(".var-name-row")
+		if( selectedRow ) selectedRow.dataset.selected = vid ? "true" : "false"
 		document.getElementById("variable_exposure").checked = Model.dag.isSource(vid)
 		document.getElementById("variable_outcome").checked = Model.dag.isTarget(vid)
 		document.getElementById("variable_selected").checked = Model.dag.isSelectedNode(vid)
@@ -94,6 +98,8 @@ var GUI = {
 	set_style : function( s ){
 		DAGitty.stylesheets.default = DAGitty.stylesheets[s]
 		var sty = DAGitty.stylesheets.default.style
+		var legend = document.getElementById("legend")
+		if( legend ) legend.dataset.style = s
 		document.getElementById("highlight_ancestral").checked = typeof(sty["confoundernode_inactive"]) === "undefined";
 		document.getElementById("highlight_ancestral").checked ? displayShow("legend_ancestors") : displayHide("legend_ancestors");
 		
@@ -106,7 +112,8 @@ var GUI = {
 		document.getElementById("highlight_puredirect").checked = typeof(sty["puredirectpath_inactive"]) === "undefined";
 		_.each(["biasingpath","causalpath","exposure","latentnode","lnode","mnode","other",
 			"outcome","rnode","adjustednode"],function(n){
-			document.getElementById("li"+n).src="images/legend/"+s+"/"+n+".png"
+			var swatch = document.getElementById("li"+n)
+			if( swatch && swatch.tagName === "IMG" ) swatch.src="images/legend/"+s+"/"+n+".png"
 		},this);
 		DAGittyControl.setStyle( s )
 	}
@@ -202,7 +209,7 @@ function msg( t ){
 
 function how( t ){
 	msg( t );
-	displayHide('menu_howto')
+	displayHide('menu_help')
 }
 
 function setsToHTML( sets ){
@@ -262,6 +269,10 @@ function causalEffectEstimates( effect_type ){
 	switch( effect_type ){
 		case "adj_total" :
 			GUI.set_bias_mode('normal')
+			if( !["dag", "pdag", "mag", "pag"].includes(Model.dag.getType()) ){
+				displayCausalMsg("Total-effect adjustment is supported for DAGs, PDAGs, MAGs and PAGs. Review the graph type before choosing controls.");
+				break;
+			}
 			displayAdjustmentInfo("total"); break
 		case "adj_direct" :
 			if( Model.dag.getType() !== "dag" || Model.dag.getSelectedNodes().length ){
@@ -429,6 +440,7 @@ function displayAdjustmentInfo( kind ){
 	if( !["total","direct"].includes( kind ) || selected.length > 0 ){ return } 
 
 	let adjustment_list_el = document.createElement( "p" )
+	adjustment_list_el.className = "adj-set-summary"
 
 	tgt_el.appendChild( adjustment_list_el )
 
@@ -445,6 +457,7 @@ function displayAdjustmentInfo( kind ){
 		}
 		let msas_html = msasToHtml( msas );
 		if( msas_html ){
+			msas_html.className = "adj-set-list";
 			el.innerText = "Minimal sufficient adjustment sets "+note_a+" for estimating the "+t+" of "
 				+ _.pluck(Model.dag.getSources(),'id').join(", ")
 				+ " on " + _.pluck(Model.dag.getTargets(),'id').join(", ") + ": "

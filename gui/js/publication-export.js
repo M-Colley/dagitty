@@ -513,7 +513,7 @@
         if (has(roles.exposure)) present.push(['exposure', 'exposure (cause)']);
         if (has(roles.outcome))  present.push(['outcome',  'outcome (effect)']);
         if (has(roles.adjusted)) present.push(['adjusted', 'adjusted / conditioned']);
-        if (has(roles.selected)) present.push(['selected', 'sample selection']);
+        if (has(roles.selected)) present.push(['selected', 'selection node']);
         if (has(roles.latent))   present.push(['latent',   'unobserved (latent)']);
         if (!present.length) return;
 

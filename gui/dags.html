@@ -26,17 +26,17 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="dags.css?v=2026-10-26.4" />
+  <link rel="stylesheet" href="dags.css?v=2026-11-13.1" />
 
   <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
        keep running the previously cached copy of these scripts after an update. -->
-  <script src="js/dagitty.js?v=2026-10-26.4"></script>
-  <script src="js/example-dags.js?v=2026-10-26.4"></script>
-  <script src="js/styles/semlike.js"></script>
-  <script src="js/styles/original.js"></script>
-  <script src="js/main.js?v=2026-10-26.4"></script>
+  <script src="js/dagitty.js?v=2026-11-13.1"></script>
+  <script src="js/example-dags.js?v=2026-11-13.1"></script>
+  <script src="js/styles/semlike.js?v=2026-11-13.1"></script>
+  <script src="js/styles/original.js?v=2026-11-13.1"></script>
+  <script src="js/main.js?v=2026-11-13.1"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js?v=2026-10-26.4"></script>
+  <script src="js/causal-discovery.js?v=2026-11-13.1"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -54,7 +54,7 @@
       }, true);
       DAGittyControl = DAGitty.controllers[0];
 
-      GUI.menus = ['model','examples','howto','layout','help'];
+      GUI.menus = ['file','export','examples','help'];
       _.each(GUI.menus, function(t) {
         document.getElementById('menu_'+t+'_title').addEventListener('click', function(){ menuToggle(t); });
       });
@@ -107,18 +107,18 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js?v=2026-10-26.4"></script>
-  <script src="js/methods-export.js?v=2026-10-26.4"></script>
-  <script src="js/publication-export.js?v=2026-10-26.4"></script>
-  <script src="js/dag-wizard.js?v=2026-10-26.4"></script>
-  <script src="js/guided-tour.js?v=2026-10-26.4"></script>
-  <script src="js/diagram-check.js?v=2026-10-26.4"></script>
-  <script src="js/paths-panel.js?v=2026-10-26.4"></script>
-  <script src="js/local-tests.js?v=2026-10-26.4"></script>
-  <script src="js/report-export.js?v=2026-10-26.4"></script>
-  <script src="js/structured-editor.js?v=2026-10-26.4"></script>
+  <script src="js/ui-enhancements.js?v=2026-11-13.1"></script>
+  <script src="js/methods-export.js?v=2026-11-13.1"></script>
+  <script src="js/publication-export.js?v=2026-11-13.1"></script>
+  <script src="js/dag-wizard.js?v=2026-11-13.1"></script>
+  <script src="js/guided-tour.js?v=2026-11-13.1"></script>
+  <script src="js/diagram-check.js?v=2026-11-13.1"></script>
+  <script src="js/paths-panel.js?v=2026-11-13.1"></script>
+  <script src="js/local-tests.js?v=2026-11-13.1"></script>
+  <script src="js/report-export.js?v=2026-11-13.1"></script>
+  <script src="js/structured-editor.js?v=2026-11-13.1"></script>
   <!-- workspace.js restores saved/shared models, so it must run last -->
-  <script src="js/workspace.js?v=2026-10-26.4"></script>
+  <script src="js/workspace.js?v=2026-11-13.1"></script>
 </head>
 
 <body>
@@ -143,29 +143,35 @@
     <li class="app-title" aria-hidden="true"><span class="brand-mark">D</span><span>DAGitty<small>Causal diagrams</small></span></li>
 
     <li role="none">
-      <a href="javascript:void(0)" id="menu_model_title" role="menuitem" aria-haspopup="true">Model</a>
-      <ul id="menu_model" style="z-index:50" role="menu">
-        <li><a href="#" onclick="newModel();displayHide('menu_model')">New model</a></li>
-        <li><a href="#" onclick="DagWizard.start();displayHide('menu_model')">Build a DAG step-by-step…</a></li>
-        <li><a href="#" onclick="StructuredEditor.open();displayHide('menu_model')">Edit as a list (no mouse needed)…</a></li>
-        <li><a href="#" onclick="Workspace.openFile();displayHide('menu_model')">Open model file…</a></li>
-        <li><a href="#" onclick="loadOnlineForm();displayHide('menu_model')">Load from dagitty.net</a></li>
+      <a href="javascript:void(0)" id="menu_file_title" role="menuitem" aria-haspopup="true">File</a>
+      <ul id="menu_file" style="z-index:50" role="menu">
+        <li><a href="#" onclick="newModel();displayHide('menu_file')">New model</a></li>
+        <li><a href="#" onclick="DagWizard.start();displayHide('menu_file')">Build a DAG step-by-step…</a></li>
+        <li><a href="#" onclick="StructuredEditor.open();displayHide('menu_file')">Edit as a list (no mouse needed)…</a></li>
+        <li><a href="#" onclick="Workspace.openFile();displayHide('menu_file')">Open model file…</a></li>
+        <li><a href="#" onclick="downloadModel();displayHide('menu_file')">Download model (.dag)</a></li>
+        <li><a href="#" onclick="loadOnlineForm();displayHide('menu_file')">Load from dagitty.net</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="Workspace.shareLink();displayHide('menu_model')">Copy shareable link</a></li>
+        <li><a href="#" onclick="Workspace.shareLink();displayHide('menu_file')">Copy shareable link</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="DataModal.open();displayHide('menu_model')">Explore a graph from data (advanced)…</a></li>
+        <li><a href="#" onclick="DataModal.open();displayHide('menu_file')">Explore a graph from data (advanced)…</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="PubExport.open();displayHide('menu_model')"><strong>Publication figure…</strong> <span style="opacity:.6">(SVG · PNG · PDF)</span></a></li>
-        <li><a href="#" onclick="ReportExport.downloadHTML();displayHide('menu_model')"><strong>Export report</strong> <span style="opacity:.6">(one HTML file: figure, analysis, methods text)</span></a></li>
-        <li><a href="#" onclick="ReportExport.downloadJSON();displayHide('menu_model')">Export analysis as JSON</a></li>
+        <li><a href="#" onclick="saveOnlineForm();displayHide('menu_file')">Publish on dagitty.net</a></li>
+      </ul>
+    </li>
+
+    <li role="none">
+      <a href="javascript:void(0)" id="menu_export_title" role="menuitem" aria-haspopup="true">Export</a>
+      <ul id="menu_export" style="z-index:50" role="menu">
+        <li><a href="#" onclick="PubExport.open();displayHide('menu_export')"><strong>Publication figure…</strong> <span style="opacity:.6">(SVG · PNG · PDF)</span></a></li>
+        <li><a href="#" onclick="ReportExport.downloadHTML();displayHide('menu_export')"><strong>Export report</strong> <span style="opacity:.6">(one HTML file: figure, analysis, methods text)</span></a></li>
+        <li><a href="#" onclick="ReportExport.downloadJSON();displayHide('menu_export')">Export analysis as JSON</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="exportPNG();displayHide('menu_model')">Quick export — PNG</a></li>
-        <li><a href="#" onclick="exportJPEG();displayHide('menu_model')">Quick export — JPEG</a></li>
-        <li><a href="#" onclick="exportSVG();displayHide('menu_model')">Quick export — SVG (raw)</a></li>
-        <li><a href="#" onclick="exportRCode();displayHide('menu_model')">Export R code (dagitty / ggdag)</a></li>
-        <li><a href="#" onclick="exportTikzCode();displayHide('menu_model')">Export LaTeX/TikZ</a></li>
-        <li class="menu-sep"></li>
-        <li><a href="#" onclick="saveOnlineForm();displayHide('menu_model')">Publish on dagitty.net</a></li>
+        <li><a href="#" onclick="exportPNG();displayHide('menu_export')">Quick export — PNG</a></li>
+        <li><a href="#" onclick="exportJPEG();displayHide('menu_export')">Quick export — JPEG</a></li>
+        <li><a href="#" onclick="exportSVG();displayHide('menu_export')">Quick export — SVG (raw)</a></li>
+        <li><a href="#" onclick="exportRCode();displayHide('menu_export')">Export R code (dagitty / ggdag)</a></li>
+        <li><a href="#" onclick="exportTikzCode();displayHide('menu_export')">Export LaTeX/TikZ</a></li>
       </ul>
     </li>
 
@@ -179,40 +185,30 @@
       </ul>
     </li>
 
-    <li role="none">
-      <a href="javascript:void(0)" id="menu_howto_title" role="menuitem" aria-haspopup="true">How to…</a>
-      <ul id="menu_howto" style="z-index:50" role="menu">
-        <li><a href="#" onclick="how('Click or tap on an empty area of the canvas to add a new variable.')">Add a variable</a></li>
-        <li><a href="#" onclick="how('Model → Edit as a list opens two tables — variables with their roles, and arrows — that you can edit entirely from the keyboard. Every change appears on the canvas immediately.')">Edit without the mouse</a></li>
-        <li><a href="#" onclick="how('Click a variable, then use the Rename button in the Variable panel — or hover and press R.')">Rename a variable</a></li>
-        <li><a href="#" onclick="how('Click the start variable, then click the end variable to draw an arrow. Clicking the same pair again removes the arrow.')">Add / remove an arrow</a></li>
-        <li><a href="#" onclick="how('Click a variable to select it, then press Delete in the Variable panel — or hover and press D.')">Delete a variable</a></li>
-        <li><a href="#" onclick="how('Save: Model → Download (or the Download button under Model code) writes a .dag file. Open: Model → Open model file… — or just drag the file onto the page. Your work is also saved automatically in this browser and restored next time.')">Save / open a model</a></li>
-        <li><a href="#" onclick="how('Model → Copy shareable link puts the whole diagram inside the link itself. Anyone who opens it sees exactly your model — nothing is uploaded anywhere.')">Share a diagram</a></li>
-        <li><a href="#" onclick="how('Click a variable and check &quot;exposure&quot; in the Variable panel (or press E). This marks the cause you are studying.')">Set the exposure (cause)</a></li>
-        <li><a href="#" onclick="how('Click a variable and check &quot;outcome&quot; in the Variable panel (or press O). This marks the effect you are studying.')">Set the outcome (effect)</a></li>
-        <li><a href="#" onclick="how('Adjusted = controlled for in your model. Click a variable and check &quot;adjusted&quot; (or press A). The right panel shows whether your choice is sufficient.')">Mark a variable as adjusted</a></li>
-        <li><a href="#" onclick="how('Sample selection marks a variable that determines who is in your sample. Conditioning on a collider can introduce bias. Click a variable and check &quot;sample selection&quot; (or press S).')">Mark a selection variable</a></li>
-        <li><a href="#" onclick="how('Unobserved (latent) = exists in the causal model but is not measured. Click a variable and check &quot;unobserved&quot; (or press U). Shown with a dashed border.')">Mark as unobserved</a></li>
-        <li><a href="#" onclick="how('Press Ctrl+Z to undo and Ctrl+Y (or Ctrl+Shift+Z) to redo. Undo/Redo buttons are also in the toolbar.')">Undo / Redo</a></li>
-      </ul>
-    </li>
-
-    <li role="none">
-      <a href="javascript:void(0)" id="menu_layout_title" role="menuitem" aria-haspopup="true">Layout</a>
-      <ul id="menu_layout" style="z-index:50" role="menu">
-        <li><a href="#" onclick="generateSpringLayout();displayHide('menu_layout');return false">Auto-arrange nodes</a></li>
-      </ul>
-    </li>
-
     <li role="none" style="border-right:none">
       <a href="javascript:void(0)" id="menu_help_title" role="menuitem" aria-haspopup="true">Help</a>
       <ul id="menu_help" style="z-index:50" role="menu">
+        <li class="menu-group" role="presentation">Get started &amp; reference</li>
         <li><a href="#" onclick="DagWizard.start();displayHide('menu_help');return false">✨ Build a DAG step-by-step</a></li>
         <li><a href="#" onclick="GuidedTour.start();displayHide('menu_help');return false">▶ Tour the interface</a></li>
         <li class="menu-sep"></li>
         <li><a href="https://www.dagitty.net/manual-3.x.pdf" target="_blank" rel="noopener" onclick="displayHide('menu_help')">User Manual (PDF)</a></li>
         <li><a href="https://dagitty.net/learn/" target="_blank" rel="noopener" onclick="displayHide('menu_help')">Tutorials &amp; Resources</a></li>
+        <li class="menu-sep"></li>
+        <li class="menu-group" role="presentation">How to edit your diagram</li>
+        <li><a href="#" onclick="how('Click or tap on an empty area of the canvas to add a new variable.')">Add a variable</a></li>
+        <li><a href="#" onclick="how('File → Edit as a list opens two tables — variables with their roles, and arrows — that you can edit entirely from the keyboard. Every change appears on the canvas immediately.')">Edit without the mouse</a></li>
+        <li><a href="#" onclick="how('Click a variable, then use the Rename button in the Variable panel — or hover and press R.')">Rename a variable</a></li>
+        <li><a href="#" onclick="how('Click the start variable, then click the end variable to draw an arrow. Clicking the same pair again removes the arrow.')">Add / remove an arrow</a></li>
+        <li><a href="#" onclick="how('Click a variable to select it, then press Delete in the Variable panel — or hover and press D.')">Delete a variable</a></li>
+        <li><a href="#" onclick="how('Save: File → Download (or the Download button under Model code) writes a .dag file. Open: File → Open model file… — or just drag the file onto the page. Your work is also saved automatically in this browser and restored next time.')">Save / open a model</a></li>
+        <li><a href="#" onclick="how('File → Copy shareable link puts the whole diagram inside the link itself. Anyone who opens it sees exactly your model — nothing is uploaded anywhere.')">Share a diagram</a></li>
+        <li><a href="#" onclick="how('Click a variable and check &quot;exposure&quot; in the Variable panel (or press E). This marks the cause you are studying.')">Set the exposure (cause)</a></li>
+        <li><a href="#" onclick="how('Click a variable and check &quot;outcome&quot; in the Variable panel (or press O). This marks the effect you are studying.')">Set the outcome (effect)</a></li>
+        <li><a href="#" onclick="how('Adjusted = controlled for in your model. Click a variable and check &quot;adjusted&quot; (or press A). The right panel shows whether your choice is sufficient.')">Mark a variable as adjusted</a></li>
+        <li><a href="#" onclick="how('A selection node marks a variable that determines who is in your sample. Conditioning on a collider can introduce bias. Click a variable and check &quot;selection node&quot; (or press S).')">Mark a selection variable</a></li>
+        <li><a href="#" onclick="how('Unobserved (latent) = exists in the causal model but is not measured. Click a variable and check &quot;unobserved&quot; (or press U). Shown with a dashed border.')">Mark as unobserved</a></li>
+        <li><a href="#" onclick="how('Press Ctrl+Z to undo and Ctrl+Y (or Ctrl+Shift+Z) to redo. Undo/Redo buttons are also in the toolbar.')">Undo / Redo</a></li>
       </ul>
     </li>
 
@@ -224,6 +220,7 @@
     <li class="menu-tools" role="none" aria-label="Undo and redo">
       <button id="btn-undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" onclick="UndoRedo.undo()" disabled>↩ <span class="toolbar-label">Undo</span></button>
       <button id="btn-redo" type="button" title="Redo (Ctrl+Y)" aria-label="Redo (Ctrl+Y)" onclick="UndoRedo.redo()" disabled><span class="toolbar-label">Redo</span> ↪</button>
+      <button id="btn-auto-arrange" type="button" title="Auto-arrange nodes" aria-label="Auto-arrange nodes" onclick="generateSpringLayout()">↔ <span class="toolbar-label">Auto-arrange</span></button>
     </li>
 
     <!-- Beginner / Advanced -->
@@ -269,6 +266,7 @@ E -&gt; D
 
   <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
   <div id="llegend">
+    <p class="sidebar-title">Setup</p>
 
     <!-- Quick Start -->
     <h3 onclick="displayToggle('quickstart')">
@@ -303,7 +301,7 @@ E -&gt; D
     </h3>
     <div id="variable" style="display:block">
       <form autocomplete="off">
-        <p class="var-name-row"><span id="variable_label"></span></p>
+        <p class="var-name-row"><span id="variable_selection_hint" class="var-selection-hint">Select a variable on the canvas</span><span id="variable_label"></span></p>
 
         <p>
           <input type="checkbox" id="variable_exposure" onclick="GUI.set_variable_status('source',this.checked)" />
@@ -322,7 +320,7 @@ E -&gt; D
         </p>
         <p>
           <input type="checkbox" id="variable_selected" onclick="GUI.set_variable_status('selectedNode',this.checked)" />
-          <label for="variable_selected">sample selection</label>
+          <label for="variable_selected">selection node</label>
           <span class="help-tip" title="Marks who is included in your sample. Conditioning on a collider introduces selection bias. Keyboard: S">?</span>
         </p>
         <p>
@@ -339,6 +337,49 @@ E -&gt; D
             onclick="DAGittyControl.getView().renameVertexDialog(document.getElementById('variable_id').value)">Rename</button>
         </p>
       </form>
+    </div>
+
+    <!-- Analysis setup -->
+    <h3 onclick="displayToggle('analysis_setup')">
+      <span class="chev" id="a_analysis_setup" data-open="1"></span>
+      Analysis setup
+    </h3>
+    <div id="analysis_setup">
+      <p class="rlegend-hint">Set an <strong>exposure</strong> and <strong>outcome</strong>, then choose a strategy.</p>
+      <p style="margin:.2em .75em .3em">
+        <label for="causal_effect_kind" class="analysis-strategy-label">Identification strategy</label>
+        <select id="causal_effect_kind" onchange="causalEffectEstimates(this.value)">
+          <option value="adj_total">Adjustment — total effect</option>
+          <option value="adj_causalodds">Adjustment — causal odds ratio</option>
+          <option value="adj_direct">Adjustment — direct effect</option>
+          <option value="instrument">Instrumental variable (IV)</option>
+        </select>
+      </p>
+      <p class="rlegend-hint">Read the adjustment advice in <strong>Causal effect identification</strong> in the diagnostics panel.</p>
+    </div>
+
+    <!-- Model code -->
+    <h3 onclick="displayToggle('model_data')">
+      <span class="chev" id="a_model_data" data-open="1"></span>
+      Model code
+    </h3>
+    <div id="model_data">
+      <p class="rlegend-hint">Copy to save · paste back and click <em>Update</em> to reload.</p>
+      <form name="model_data_frm" style="padding:0 .75em .2em">
+        <!-- "edited" state: compare with the live model, so merely moving the
+             caret (arrow keys) no longer flags the code as changed, and undoing
+             back to the original clears the flag again. Colour comes from the
+             .dirty rule in dags.css, which has a dark-theme variant. -->
+        <textarea rows="9" name="adj_matrix" id="adj_matrix"
+          oninput="modelCodeChanged()"></textarea>
+      </form>
+      <div class="model-code-actions">
+        <button type="button" onclick="loadDAGFromTextData()">Update</button>
+        <button type="button" class="btn-ghost" onclick="downloadModel()">Download</button>
+      </div>
+      <div id="model_refresh" style="display:none">
+        Code edited — click <strong>Update</strong> to apply.
+      </div>
     </div>
 
     <!-- View mode -->
@@ -407,7 +448,7 @@ E -&gt; D
     <!-- Path highlighting -->
     <h3 onclick="displayToggle('coloring')">
       <span class="chev" id="a_coloring" data-open="1"></span>
-      Path highlighting
+      Node &amp; path highlighting
     </h3>
     <div id="coloring" style="display:block">
       <form autocomplete="off">
@@ -435,14 +476,14 @@ E -&gt; D
       Legend
     </h3>
     <div id="legend" style="display:block">
-      <p><img id="liexposure" src="images/legend/original/exposure.png" alt="" /> exposure (cause)</p>
-      <p><img id="lioutcome"  src="images/legend/original/outcome.png"  alt="" /> outcome (effect)</p>
+      <p><span id="liexposure" class="legend-role legend-exposure" aria-hidden="true">E</span> exposure (cause)</p>
+      <p><span id="lioutcome" class="legend-role legend-outcome" aria-hidden="true">O</span> outcome (effect)</p>
       <div id="legend_ancestors">
         <p><img id="lilnode" src="images/legend/original/lnode.png" alt="" /> ancestor of exposure</p>
         <p><img id="lirnode" src="images/legend/original/rnode.png" alt="" /> ancestor of outcome</p>
         <p><img id="limnode" src="images/legend/original/mnode.png" alt="" /> ancestor of both</p>
       </div>
-      <p><img id="liadjustednode" src="images/legend/original/adjustednode.png" alt="" /> adjusted (controlled for)</p>
+      <p><span id="liadjustednode" class="legend-role legend-adjusted" aria-hidden="true">A</span> adjusted (controlled for)</p>
       <p><img id="lilatentnode"   src="images/legend/original/latentnode.png"   alt="" /> unobserved (latent)</p>
       <p><img id="liother"        src="images/legend/original/other.png"        alt="" /> other variable</p>
       <p id="legend_causal"><img  id="licausalpath"   src="images/legend/original/causalpath.png"   alt="" /> causal path</p>
@@ -454,6 +495,7 @@ E -&gt; D
 
   <!-- ── Right sidebar ──────────────────────────────────────────────────── -->
   <div id="rlegend">
+    <p class="sidebar-title">Diagnostics &amp; implications</p>
 
     <!-- Diagram check -->
     <h3 onclick="displayToggle('diagram_check')">
@@ -471,15 +513,6 @@ E -&gt; D
       Causal effect identification
     </h3>
     <div id="causal_effect_block">
-      <p class="rlegend-hint">Set an <strong>exposure</strong> and <strong>outcome</strong>, then choose a strategy.</p>
-      <p style="margin:.2em .75em .3em">
-        <select id="causal_effect_kind" onchange="causalEffectEstimates(this.value)">
-          <option value="adj_total">Adjustment — total effect</option>
-          <option value="adj_causalodds">Adjustment — causal odds ratio</option>
-          <option value="adj_direct">Adjustment — direct effect</option>
-          <option value="instrument">Instrumental variable (IV)</option>
-        </select>
-      </p>
       <div id="causal_effect"></div>
     </div>
 
@@ -520,30 +553,6 @@ E -&gt; D
       <textarea id="methods_text" rows="10" readonly aria-label="Plain-language methods statement"></textarea>
       <div class="model-code-actions">
         <button type="button" id="methods_copy_btn" onclick="MethodsExport.copy()">Copy to clipboard</button>
-      </div>
-    </div>
-
-    <!-- Model code -->
-    <h3 onclick="displayToggle('model_data')">
-      <span class="chev" id="a_model_data" data-open="1"></span>
-      Model code
-    </h3>
-    <div id="model_data">
-      <p class="rlegend-hint">Copy to save · paste back and click <em>Update</em> to reload.</p>
-      <form name="model_data_frm" style="padding:0 .75em .2em">
-        <!-- "edited" state: compare with the live model, so merely moving the
-             caret (arrow keys) no longer flags the code as changed, and undoing
-             back to the original clears the flag again. Colour comes from the
-             .dirty rule in dags.css, which has a dark-theme variant. -->
-        <textarea rows="9" name="adj_matrix" id="adj_matrix"
-          oninput="modelCodeChanged()"></textarea>
-      </form>
-      <div class="model-code-actions">
-        <button type="button" onclick="loadDAGFromTextData()">Update</button>
-        <button type="button" class="btn-ghost" onclick="downloadModel()">Download</button>
-      </div>
-      <div id="model_refresh" style="display:none">
-        Code edited — click <strong>Update</strong> to apply.
       </div>
     </div>
 

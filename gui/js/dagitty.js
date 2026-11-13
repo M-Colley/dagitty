@@ -3254,6 +3254,10 @@ var GraphLayouter = {}
 GraphLayouter.prototype = {
 	layoutCalcBounds: function() {
 		var minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity
+		if( this.graph.vertices.values().length === 0 ){
+			this.graph.setBoundingBox([-.5,-.5,.5,.5])
+			return
+		}
 		_.each(this.graph.vertices.values(), function( v ){
 			var x = v.layout_pos_x
 			var y = v.layout_pos_y
@@ -3291,7 +3295,58 @@ GraphLayouter.Spring.prototype = {
 		for (var i = 0; i < this.iterations; i++) {
 			this.layoutIteration()
 		}
+		this.layoutPackComponents()
 		this.layoutCalcBounds()
+	},
+
+	// Separate components have no attractive springs between them. Pack their
+	// finished layouts in nearby, non-overlapping frames so isolated variables
+	// do not consume most of the canvas while the connected diagram shrinks.
+	layoutPackComponents: function() {
+		var vertices = this.graph.vertices.values(), adjacent = Object.create(null)
+		var visited = Object.create(null), components = [], gap = this.k
+		vertices.forEach(function(v){ adjacent[v.id] = [] })
+		this.graph.edges.forEach(function(e){
+			adjacent[e.v1.id].push(e.v2)
+			adjacent[e.v2.id].push(e.v1)
+		})
+		vertices.forEach(function(v){
+			if( visited[v.id] ) return
+			var stack = [v], members = [], minx = Infinity, maxx = -Infinity
+			var miny = Infinity, maxy = -Infinity
+			visited[v.id] = true
+			while( stack.length ){
+				var next = stack.pop()
+				members.push(next)
+				minx = Math.min(minx, next.layout_pos_x); maxx = Math.max(maxx, next.layout_pos_x)
+				miny = Math.min(miny, next.layout_pos_y); maxy = Math.max(maxy, next.layout_pos_y)
+				adjacent[next.id].forEach(function(neighbor){
+					if( !visited[neighbor.id] ){
+						visited[neighbor.id] = true
+						stack.push(neighbor)
+					}
+				})
+			}
+			components.push({ members: members, x: (minx+maxx)/2, y: (miny+maxy)/2,
+				width: Math.max(gap, maxx-minx), height: Math.max(gap, maxy-miny) })
+		})
+		if( components.length < 2 ) return
+		components.sort(function(a,b){ return b.members.length-a.members.length })
+		var area = 0, maxWidth = 0
+		components.forEach(function(c){
+			area += (c.width+gap)*(c.height+gap)
+			maxWidth = Math.max(maxWidth, c.width)
+		})
+		var rowWidth = Math.max(maxWidth, Math.sqrt(area)), x = 0, y = 0, rowHeight = 0
+		components.forEach(function(c){
+			if( x > 0 && x+c.width > rowWidth ){
+				x = 0; y += rowHeight+gap; rowHeight = 0
+			}
+			var dx = x+c.width/2-c.x, dy = y+c.height/2-c.y
+			c.members.forEach(function(v){ v.layout_pos_x += dx; v.layout_pos_y += dy })
+			x += c.width+gap
+			rowHeight = Math.max(rowHeight, c.height)
+		})
 	},
 
 	layoutPrepare: function() {
@@ -9061,10 +9116,12 @@ var GraphGUI_SVG = Class.extend({
 		if( sty.decoration[vertex_type+"node"] ){
 			i=0
 			while(  sty.decoration[vertex_type+"node"][i] ){
-				e = document.createElementNS( svgns, "path" )
-				for( f in sty.decoration[vertex_type+"node"][i] ){
-					e.setAttribute( f, sty.decoration[vertex_type+"node"][i][f] )
+				var decoration = sty.decoration[vertex_type+"node"][i]
+				e = document.createElementNS( svgns, decoration.text ? "text" : "path" )
+				for( f in decoration ){
+					if( f !== "text" ) e.setAttribute( f, decoration[f] )
 				}
+				if( decoration.text ) e.textContent = decoration.text
 				el.dom.appendChild( e )
 				i++
 			}
@@ -9135,6 +9192,7 @@ var GraphGUI_SVG = Class.extend({
 		this.unmarkVertexShape()
 	},
 	markVertexShape : function( el ){
+		el.dom.classList.add("vertex-selected")
 		el.previous_stroke  = el.dom.firstChild.getAttribute( "stroke",
 			this.getStyle().style.node.stroke )
 		el.previous_stroke_width  = el.dom.firstChild.getAttribute( "stroke-width",
@@ -9149,6 +9207,7 @@ var GraphGUI_SVG = Class.extend({
 	unmarkVertexShape : function( el ){
 		if( !el ) el = this.marked_vertex_shape
 		if( el && el.dom ){
+			el.dom.classList.remove("vertex-selected")
 			el.dom.firstChild.setAttribute( "stroke", el.previous_stroke )
 			el.dom.firstChild.setAttribute( "stroke-width", el.previous_stroke_width )
 		}
