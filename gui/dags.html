@@ -26,17 +26,17 @@
     })();
   </script>
 
-  <link rel="stylesheet" href="dags.css?v=2026-11-13.1" />
+  <link rel="stylesheet" href="dags.css?v=2026-11-14.1" />
 
   <!-- ?v=… busts the browser cache on deploy: without it, returning visitors
        keep running the previously cached copy of these scripts after an update. -->
-  <script src="js/dagitty.js?v=2026-11-13.1"></script>
-  <script src="js/example-dags.js?v=2026-11-13.1"></script>
-  <script src="js/styles/semlike.js?v=2026-11-13.1"></script>
-  <script src="js/styles/original.js?v=2026-11-13.1"></script>
-  <script src="js/main.js?v=2026-11-13.1"></script>
+  <script src="js/dagitty.js?v=2026-11-14.1"></script>
+  <script src="js/example-dags.js?v=2026-11-14.1"></script>
+  <script src="js/styles/semlike.js?v=2026-11-14.1"></script>
+  <script src="js/styles/original.js?v=2026-11-14.1"></script>
+  <script src="js/main.js?v=2026-11-14.1"></script>
   <script src="js/base64.js"></script>
-  <script src="js/causal-discovery.js?v=2026-11-13.1"></script>
+  <script src="js/causal-discovery.js?v=2026-11-14.1"></script>
 
   <!-- IMPORTANT: inline window.onload must come BEFORE ui-enhancements.js,
        so that ui-enhancements can capture initialize() via window.addEventListener('load') -->
@@ -107,18 +107,19 @@
   </script>
 
   <!-- ui-enhancements AFTER the inline script so window.onload=initialize is already set -->
-  <script src="js/ui-enhancements.js?v=2026-11-13.1"></script>
-  <script src="js/methods-export.js?v=2026-11-13.1"></script>
-  <script src="js/publication-export.js?v=2026-11-13.1"></script>
-  <script src="js/dag-wizard.js?v=2026-11-13.1"></script>
-  <script src="js/guided-tour.js?v=2026-11-13.1"></script>
-  <script src="js/diagram-check.js?v=2026-11-13.1"></script>
-  <script src="js/paths-panel.js?v=2026-11-13.1"></script>
-  <script src="js/local-tests.js?v=2026-11-13.1"></script>
-  <script src="js/report-export.js?v=2026-11-13.1"></script>
-  <script src="js/structured-editor.js?v=2026-11-13.1"></script>
+  <script src="js/ui-enhancements.js?v=2026-11-14.1"></script>
+  <script src="js/methods-export.js?v=2026-11-14.1"></script>
+  <script src="js/publication-export.js?v=2026-11-14.1"></script>
+  <script src="js/dag-wizard.js?v=2026-11-14.1"></script>
+  <script src="js/guided-tour.js?v=2026-11-14.1"></script>
+  <script src="js/diagram-check.js?v=2026-11-14.1"></script>
+  <script src="js/paths-panel.js?v=2026-11-14.1"></script>
+  <script src="js/local-tests.js?v=2026-11-14.1"></script>
+  <script src="js/report-export.js?v=2026-11-14.1"></script>
+  <script src="js/structured-editor.js?v=2026-11-14.1"></script>
+  <script src="js/beginner-workflow.js?v=2026-11-14.1"></script>
   <!-- workspace.js restores saved/shared models, so it must run last -->
-  <script src="js/workspace.js?v=2026-11-13.1"></script>
+  <script src="js/workspace.js?v=2026-11-14.1"></script>
 </head>
 
 <body>
@@ -150,13 +151,13 @@
         <li><a href="#" onclick="StructuredEditor.open();displayHide('menu_file')">Edit as a list (no mouse needed)…</a></li>
         <li><a href="#" onclick="Workspace.openFile();displayHide('menu_file')">Open model file…</a></li>
         <li><a href="#" onclick="downloadModel();displayHide('menu_file')">Download model (.dag)</a></li>
-        <li><a href="#" onclick="loadOnlineForm();displayHide('menu_file')">Load from dagitty.net</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="loadOnlineForm();displayHide('menu_file')">Load from dagitty.net</a></li>
         <li class="menu-sep"></li>
         <li><a href="#" onclick="Workspace.shareLink();displayHide('menu_file')">Copy shareable link</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="DataModal.open();displayHide('menu_file')">Explore a graph from data (advanced)…</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="DataModal.open();displayHide('menu_file')">Explore a graph from data (advanced)…</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="saveOnlineForm();displayHide('menu_file')">Publish on dagitty.net</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="saveOnlineForm();displayHide('menu_file')">Publish on dagitty.net</a></li>
       </ul>
     </li>
 
@@ -165,13 +166,13 @@
       <ul id="menu_export" style="z-index:50" role="menu">
         <li><a href="#" onclick="PubExport.open();displayHide('menu_export')"><strong>Publication figure…</strong> <span style="opacity:.6">(SVG · PNG · PDF)</span></a></li>
         <li><a href="#" onclick="ReportExport.downloadHTML();displayHide('menu_export')"><strong>Export report</strong> <span style="opacity:.6">(one HTML file: figure, analysis, methods text)</span></a></li>
-        <li><a href="#" onclick="ReportExport.downloadJSON();displayHide('menu_export')">Export analysis as JSON</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="ReportExport.downloadJSON();displayHide('menu_export')">Export analysis as JSON</a></li>
         <li class="menu-sep"></li>
-        <li><a href="#" onclick="exportPNG();displayHide('menu_export')">Quick export — PNG</a></li>
-        <li><a href="#" onclick="exportJPEG();displayHide('menu_export')">Quick export — JPEG</a></li>
-        <li><a href="#" onclick="exportSVG();displayHide('menu_export')">Quick export — SVG (raw)</a></li>
-        <li><a href="#" onclick="exportRCode();displayHide('menu_export')">Export R code (dagitty / ggdag)</a></li>
-        <li><a href="#" onclick="exportTikzCode();displayHide('menu_export')">Export LaTeX/TikZ</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="exportPNG();displayHide('menu_export')">Quick export — PNG</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="exportJPEG();displayHide('menu_export')">Quick export — JPEG</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="exportSVG();displayHide('menu_export')">Quick export — SVG (raw)</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="exportRCode();displayHide('menu_export')">Export R code (dagitty / ggdag)</a></li>
+        <li class="advanced-menu-item"><a href="#" onclick="exportTikzCode();displayHide('menu_export')">Export LaTeX/TikZ</a></li>
       </ul>
     </li>
 
@@ -267,6 +268,7 @@ E -&gt; D
   <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
   <div id="llegend">
     <p class="sidebar-title">Setup</p>
+    <div id="beginner-setup" class="beginner-only" aria-label="Guided diagram setup"></div>
 
     <!-- Quick Start -->
     <h3 onclick="displayToggle('quickstart')">
@@ -496,6 +498,7 @@ E -&gt; D
   <!-- ── Right sidebar ──────────────────────────────────────────────────── -->
   <div id="rlegend">
     <p class="sidebar-title">Diagnostics &amp; implications</p>
+    <div id="beginner-results" class="beginner-only" aria-label="Guided adjustment advice"></div>
 
     <!-- Diagram check -->
     <h3 onclick="displayToggle('diagram_check')">

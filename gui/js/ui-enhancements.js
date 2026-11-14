@@ -347,6 +347,7 @@
                 btn.setAttribute('aria-label', 'Beginner mode');
                 btn.title = this.active ? 'Beginner mode is on. Switch to advanced mode.' : 'Advanced mode is on. Switch to beginner mode.';
             }
+            window.dispatchEvent(new window.CustomEvent('dagitty:modechange', { detail: { beginner: this.active } }));
         }
     };
 

@@ -110,7 +110,8 @@
                   'relationship. Pick a role if you know it — we\'ll suggest arrows for that role, and you can fine-tune them ' +
                   'on the canvas afterwards. Mark whether each is <strong>measured</strong>: unmeasured variables ' +
                   'become unobserved (latent) and can\'t be adjusted for. This step is optional.</p>' +
-                  '<dl class="wiz-defs">' +
+                  '<p class="wiz-sub">Not sure which type fits? Leave “Not sure yet / other” selected. This adds no arrows; you can connect the variable in the editor.</p>' +
+                  '<details class="wiz-role-help"' + (state.mode === 'advanced' ? ' open' : '') + '><summary>What do these roles mean?</summary><dl class="wiz-defs">' +
                     '<div><dt>Confounder</dt><dd>a common cause of both the exposure and the outcome ' +
                       '(can create a noncausal association; may need to be adjusted for).</dd></div>' +
                     '<div><dt>Mediator</dt><dd>sits on the causal pathway: exposure → mediator → outcome ' +
@@ -118,14 +119,14 @@
                     '<div><dt>Collider</dt><dd>a common effect of two variables ' +
                       '(adjusting for it can <em>create</em> bias).</dd></div>' +
                     '<div><dt>Other / not sure yet</dt><dd>no arrows added automatically; connect it in the editor.</dd></div>' +
-                  '</dl>' +
+                  '</dl></details>' +
                   '<div class="wiz-add-row">' +
                     '<label class="wiz-input-label">Variable name<input type="text" id="wiz-var-name" class="wiz-input" placeholder="Variable name" autocomplete="off"></label>' +
                     '<div class="wiz-input-label"><label for="wiz-var-role">Node type</label><select id="wiz-var-role" class="wiz-input">' +
-                      '<option value="other">Other / not sure yet</option>' +
-                      '<option value="confounder">Confounder</option>' +
-                      '<option value="mediator">Mediator</option>' +
-                      '<option value="collider">Collider</option>' +
+                      '<option value="other">Not sure yet / other</option>' +
+                      '<option value="confounder">May affect both (confounder)</option>' +
+                      '<option value="mediator">May carry part of the effect (mediator)</option>' +
+                      '<option value="collider">May be affected by both (collider)</option>' +
                     '</select></div>' +
                     '<label class="wiz-check wiz-measured"><input type="checkbox" id="wiz-var-measured" checked> measured</label>' +
                     '<button type="button" class="wiz-add-btn" id="wiz-add-var">Add</button>' +
@@ -312,7 +313,7 @@
             '<thead><tr><th scope="col">Variable name</th><th scope="col">Node type</th>' +
             '<th scope="col">Measured</th><th scope="col">Actions</th></tr></thead><tbody></tbody></table>';
         var body = list.querySelector('tbody');
-        var labels = { other: 'Other / not sure yet', confounder: 'Confounder', mediator: 'Mediator', collider: 'Collider' };
+        var labels = { other: 'Not sure yet / other', confounder: 'May affect both (confounder)', mediator: 'May carry part of the effect (mediator)', collider: 'May be affected by both (collider)' };
         state.others.forEach(function (o, i) {
             var row = document.createElement('tr');
             row.innerHTML = '<th scope="row">' + esc(o.name) + '</th><td>' + labels[o.role] +

@@ -36,7 +36,8 @@ approachable for people new to causal inference, while keeping all of the origin
 - 🩺 **Diagram check** — names the specific mistake and the variable involved (*“M sits on a causal pathway
   from X to Y — controlling for it removes part of the effect you are trying to measure”*): mediators,
   colliders, arrows drawn the wrong way round, sample selection on a common effect. Long explanations expand on demand
-- 🧰 Beginner / Advanced mode, undo / redo, empty-canvas hints, and inline help on every concept
+- 🧰 **Guided Beginner mode** — first-time visitors get four steps: choose the question, review arrows, choose controls, then save and discuss. Complete control sets can be applied in one undoable action. The overall (total) effect is used throughout; the full editor remains one click away. Saved mode choices are respected.
+- Undo / redo, empty-canvas hints, and inline help on every concept
 - 💾 **Browser autosave** — when browser storage is available, the diagram can be restored on the next visit;
   open a saved `.dag` file from the File menu or by dragging it onto the page
 - 🔗 **Copy shareable link** — the whole diagram travels inside the URL, so a collaborator opening it
