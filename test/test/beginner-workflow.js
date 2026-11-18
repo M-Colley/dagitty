@@ -11,6 +11,7 @@ async function beginnerFixture(code, options = {}) {
     if (options.storageFailure) Object.defineProperty(w, 'localStorage', { get() { throw new Error('Unavailable') } })
     else if (options.saved !== undefined) w.localStorage.setItem('dagitty_beginner_mode', options.saved)
     if (options.advancedEffect) w.localStorage.setItem('dagitty_advanced_effect', options.advancedEffect)
+    if (options.autosave) w.localStorage.setItem('dagitty_autosave', JSON.stringify({ code: options.autosave, ts: Date.now() }))
     script('dagitty.js'); script('styles/original.js'); script('example-dags.js'); script('main.js')
     w.eval(Array.from(d.scripts).find(s => s.textContent.includes('function initialize()')).textContent)
     let graph = w.GraphParser.parseGuess(code)
@@ -26,6 +27,8 @@ async function beginnerFixture(code, options = {}) {
         get() { return this.textContent }, set(value) { this.textContent = value }
     })
     for (const file of ['ui-enhancements.js', 'diagram-check.js', 'methods-export.js', 'report-export.js', 'beginner-workflow.js']) script(file)
+    if (options.autosave) script('workspace.js')
+    if (options.tour) script('guided-tour.js')
     if (options.kind) d.getElementById('causal_effect_kind').value = options.kind
     await new Promise(resolve => w.addEventListener('load', resolve, { once: true }))
     return { w, d, $: id => d.getElementById(id), graph: () => graph, set: controller.setGraph,
@@ -50,6 +53,7 @@ QUnit.test('first visits start guided, explicit advanced preference survives, an
     assert.true(unavailable.w.BeginnerMode.active)
     unavailable.$('beginner-full').click()
     assert.false(unavailable.w.BeginnerMode.active)
+    assert.strictEqual(unavailable.d.activeElement, unavailable.$('btn-beginner-mode'))
     unavailable.close()
 })
 
@@ -77,11 +81,14 @@ QUnit.test('applying a complete recommended set replaces controls in one undo st
     const t = await beginnerFixture(beginnerConfounded)
     const before = t.graph().toString()
     assert.ok(t.$('beginner-options').textContent.includes('C'))
-    t.$('beginner-options').querySelector('button').click()
+    const apply = t.$('beginner-options').querySelector('button')
+    apply.focus()
+    apply.click()
     assert.deepEqual(Array.from(t.graph().getAdjustedNodes(), v => v.id), ['C'])
     assert.equal(t.graph().getEdges().length, 4)
     assert.equal(t.graph().getVertex('C').layout_pos_y, -1)
     assert.ok(t.$('beginner-verdict').textContent.includes('are sufficient'))
+    assert.strictEqual(t.d.activeElement, t.$('beginner-verdict'), 'keyboard focus moves to the updated result')
     t.w.UndoRedo.undo()
     assert.equal(t.graph().toString(), before)
     t.w.UndoRedo.redo()
@@ -156,5 +163,49 @@ QUnit.test("a saved advanced effect survives a reload into beginner mode", async
     assert.equal(t.$("causal_effect_kind").value, "adj_total")
     t.w.BeginnerMode.toggle()
     assert.equal(t.$("causal_effect_kind").value, "adj_direct")
+    t.close()
+})
+
+QUnit.test('advanced mode restores the saved strategy for the autosaved diagram', async assert => {
+    const t = await beginnerFixture(beginnerConfounded, {
+        saved: 'false', advancedEffect: 'adj_causalodds',
+        autosave: 'dag { E [exposure,pos="0,0"] Y [outcome,pos="2,0"] S [selected,pos="2,1"] E -> Y Y -> S }'
+    })
+    await new Promise(resolve => t.w.setTimeout(resolve, 0))
+    assert.ok(t.graph().isSelectedNode('S'), 'the restored graph supports the causal odds ratio')
+    assert.equal(t.$('causal_effect_kind').value, 'adj_causalodds')
+    assert.equal(t.w.ReportExport.collect().adjustment.criterion, 'causal odds ratio')
+    t.close()
+})
+
+QUnit.test('imported conflicting roles cannot produce a positive guided adjustment verdict', async assert => {
+    const t = await beginnerFixture('dag { E [exposure,adjusted] Y [outcome] C C -> E C -> Y E -> Y }')
+    assert.ok(/cannot be used as controls.*E/.test(t.$('beginner-verdict').textContent))
+    const replacement = t.$('beginner-options').querySelector('button')
+    assert.ok(replacement, 'offer the measured replacement')
+    replacement.click()
+    assert.deepEqual(Array.from(t.graph().getAdjustedNodes(), v => v.id), ['C'])
+    t.set(t.w.GraphParser.parseGuess('dag { E [exposure,latent] Y [outcome] E -> Y }'))
+    assert.ok(/measured cause and result/.test(t.$('beginner-verdict').textContent))
+    assert.notOk(t.$('beginner-options').querySelector('button'))
+    t.close()
+})
+
+QUnit.test('the tour follows the visible beginner workflow and still offers advanced guidance', async assert => {
+    const t = await beginnerFixture(beginnerConfounded, { tour: true })
+    t.w.GuidedTour.start()
+    assert.strictEqual(t.d.activeElement, t.$('tour-next'))
+    const titles = []
+    for (let i = 0; i < 5; i++) {
+        titles.push(t.$('tour-title').textContent)
+        t.$('tour-next').click()
+    }
+    assert.deepEqual(titles, ['Choose your question', 'Review your assumptions', 'Choose your controls',
+        'Save and discuss', 'Explore the full editor'])
+    assert.false(t.$('tour-root').classList.contains('on'))
+    t.w.BeginnerMode.toggle()
+    t.w.GuidedTour.start()
+    for (let i = 0; i < 5; i++) t.$('tour-next').click()
+    assert.equal(t.$('tour-title').textContent, 'Predictions you can test')
     t.close()
 })

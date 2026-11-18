@@ -95,6 +95,14 @@
     // which is simply false. So compute the unconstrained answer on a copy of
     // the graph with the current adjustments cleared, and show alternatives.
     window.AdjustmentSets = {
+        /** Adjusted marks that cannot be ordinary measured controls. Keep this
+         * practical check separate from the engine's conditioning criterion. */
+        invalidControls: function (g) {
+            if (!g) return [];
+            return g.getAdjustedNodes().filter(function (v) {
+                return g.isLatentNode(v) || g.isSource(v) || g.isTarget(v) || g.isSelectedNode(v);
+            });
+        },
         /** Minimal sufficient sets ignoring the user's current adjustments, as
          *  sorted arrays of ids; [] = none exists; [[]] = nothing needed;
          *  null = not applicable (no exposure/outcome, unsupported graph). */
@@ -138,8 +146,8 @@
         var sets = AdjustmentSets.minimal(g, kind);
         if (!sets) return null;
         var label = kind + ' effect';
-        var sufficient = kind === 'direct' ? GraphAnalyzer.isAdjustmentSetDirectEffect(g)
-                                           : GraphAnalyzer.isAdjustmentSet(g);
+        var sufficient = !AdjustmentSets.invalidControls(g).length &&
+            (kind === 'direct' ? GraphAnalyzer.isAdjustmentSetDirectEffect(g) : GraphAnalyzer.isAdjustmentSet(g));
         var wrap = document.createElement('div');
         wrap.className = 'adj-alt';
         var p = document.createElement('p');
@@ -458,7 +466,12 @@
 
         topItems.forEach(function (li, idx) {
             var link = li.querySelector(':scope > a');
-            if (!link) return;
+            var ul = li.querySelector('ul');
+            if (!link || !ul) return;
+            var subs = Array.from(ul.querySelectorAll('a'));
+            function visibleItems() {
+                return subs.filter(function (sub) { return sub.getClientRects().length > 0; });
+            }
             link.setAttribute('tabindex', '0');
             link.addEventListener('keydown', function (e) {
                 if (e.key === 'ArrowRight') { e.preventDefault(); (topItems[(idx+1)%topItems.length].querySelector(':scope>a')||{focus:function(){}}).focus(); }
@@ -466,19 +479,24 @@
                 else if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     menu.querySelectorAll('li ul').forEach(function (other) { other.style.display = ''; });
-                    var ul = li.querySelector('ul');
-                    if (ul) { ul.style.display = 'block'; var f = ul.querySelector('a'); if (f) f.focus(); }
+                    ul.style.display = 'block';
+                    var first = visibleItems()[0];
+                    if (first) first.focus();
                 } else if (e.key === 'Escape') {
                     menu.querySelectorAll('li ul').forEach(function(ul){ul.style.display='';});
                 }
             });
-            var ul = li.querySelector('ul');
-            if (!ul) return;
-            var subs = Array.prototype.slice.call(ul.querySelectorAll('a'));
-            subs.forEach(function (sub, si) {
+            subs.forEach(function (sub) {
                 sub.addEventListener('keydown', function (e) {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); (subs[(si+1)%subs.length]).focus(); }
-                    else if (e.key === 'ArrowUp') { e.preventDefault(); if(si===0){ul.style.display='';link.focus();}else subs[si-1].focus(); }
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        var items = visibleItems();
+                        var index = items.indexOf(sub);
+                        if (index < 0) return;
+                        e.preventDefault();
+                        if (e.key === 'ArrowDown') items[(index + 1) % items.length].focus();
+                        else if (index > 0) items[index - 1].focus();
+                        else { ul.style.display = ''; link.focus(); }
+                    }
                     else if (e.key === 'Escape' || e.key === 'Tab') { ul.style.display=''; link.focus(); }
                 });
             });

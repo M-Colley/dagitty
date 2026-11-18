@@ -66,6 +66,12 @@
         var adjusted  = ids(g.getAdjustedNodes());
         var latent    = ids(g.getLatentNodes());
         var selected  = ids(g.getSelectedNodes ? g.getSelectedNodes() : []);
+        var invalidControls = window.AdjustmentSets && AdjustmentSets.invalidControls
+            ? ids(AdjustmentSets.invalidControls(g))
+            : adjusted.filter(function (id) {
+                return exposures.indexOf(id) !== -1 || outcomes.indexOf(id) !== -1 ||
+                    latent.indexOf(id) !== -1 || selected.indexOf(id) !== -1;
+            });
         var allIds    = ids(g.getVertices());
         var covariates = _.difference(allIds, exposures, outcomes);
 
@@ -148,6 +154,29 @@
                 'but cannot be verified from data alone. The chosen instrument, estimator and target effect must ' +
                 'also be specified: additional assumptions such as linearity or homogeneous effects, or monotonicity ' +
                 'for a local average treatment effect, depend on that choice.');
+        } else if (invalidControls.length) {
+            var repair = '';
+            if (kind === 'adj_causalodds') {
+                repair = 'Minimal adjustment sets for this selection-specific criterion are not enumerated by this interface.';
+            } else {
+                var repairKind = kind === 'adj_direct' ? 'direct' : 'total';
+                var repairSets;
+                if (window.AdjustmentSets) repairSets = AdjustmentSets.minimal(g, repairKind);
+                else {
+                    var repairGraph = g.clone();
+                    repairGraph.getAdjustedNodes().slice().forEach(function (v) { repairGraph.removeAdjustedNode(v); });
+                    repairSets = (repairKind === 'direct' ? GraphAnalyzer.listMsasDirectEffect(repairGraph)
+                        : GraphAnalyzer.listMsasTotalEffect(repairGraph)).map(function (set) { return ids(set); });
+                }
+                repair = !repairSets ? 'Review the adjustment advice in the full editor.'
+                    : !repairSets.length ? 'No set of measured variables identifies this effect by adjustment under the current diagram.'
+                    : repairSets.length === 1 && repairSets[0].length === 0
+                        ? 'Under this diagram the effect could be estimated without ordinary control variables.'
+                        : msaSentence(repairSets);
+            }
+            lines.push('WARNING: the proposed adjustment set ' + setBraces(adjusted) + ' includes conflicting Adjusted marks on ' +
+                list(invalidControls) + '. Exposure, outcome, unobserved and selection variables cannot be ordinary measured controls. ' +
+                'Clear the conflicting Adjusted marks before interpreting this analysis. ' + repair);
         } else if (kind === 'adj_causalodds') {
             var oddsSufficient = GraphAnalyzer.isAdjustmentSetCausalOddsRatio(g);
             lines.push('We targeted the causal odds ratio of ' + expOutBase + ' in a sample selected on ' +

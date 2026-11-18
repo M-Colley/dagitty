@@ -418,7 +418,13 @@ function displayAdjustmentInfo( kind ){
 		f = "isAdjustmentSetCausalOddsRatio"
 	}
 
-	if( GraphAnalyzer[f]( g ) ){
+	let invalid_controls = window.AdjustmentSets && AdjustmentSets.invalidControls
+		? AdjustmentSets.invalidControls(g)
+		: adjusted_nodes.filter(function(v){ return g.isLatentNode(v) || g.isSource(v) || g.isTarget(v) || g.isSelectedNode(v) })
+	if( invalid_controls.length ){
+		tgt_el.appendChild( msgWarnP("The Adjusted marks on "+_.pluck(invalid_controls,'id').sort().join(", ")+
+			" conflict with their exposure, outcome, unobserved or selection roles. Clear these marks before interpreting the adjustment result." ) )
+	} else if( GraphAnalyzer[f]( g ) ){
 		if( adjusted.length == 0 ){
 			tgt_el.appendChild( msgOKP( "No open biasing paths." ) )
 		} else {
@@ -444,7 +450,11 @@ function displayAdjustmentInfo( kind ){
 
 	tgt_el.appendChild( adjustment_list_el )
 
-	if( adjusted_nodes.length > 0 ){
+	let adjustment_graph = g
+	if( invalid_controls.length ){
+		adjustment_graph = g.clone()
+		adjustment_graph.getAdjustedNodes().slice().forEach(function(v){ adjustment_graph.removeAdjustedNode(v) })
+	} else if( adjusted_nodes.length > 0 ){
 		note_adjustment = " containing "+_.pluck(adjusted_nodes,'id').sort().join(", ");
 	}
 	
@@ -469,12 +479,12 @@ function displayAdjustmentInfo( kind ){
 
 	if( kind == "total" ){
 		showMsas( "total effect",
-			GraphAnalyzer.listMsasTotalEffect( g ), note_adjustment, adjustment_list_el );
+			GraphAnalyzer.listMsasTotalEffect( adjustment_graph ), note_adjustment, adjustment_list_el );
 	}
 	
 	if( kind == "direct" ){
 		showMsas( "direct effect",
-			GraphAnalyzer.listMsasDirectEffect( g ), note_adjustment, adjustment_list_el );
+			GraphAnalyzer.listMsasDirectEffect( adjustment_graph ), note_adjustment, adjustment_list_el );
 	}
 }
 

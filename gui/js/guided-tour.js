@@ -12,7 +12,7 @@
 
     // ── Steps ─────────────────────────────────────────────────────────────────
     // target: CSS selector to spotlight (null = centered, no spotlight)
-    var STEPS = [
+    var ADVANCED_STEPS = [
         {
             target: null,
             title: 'Welcome to DAGitty 👋',
@@ -75,7 +75,36 @@
         }
     ];
 
+    var BEGINNER_STEPS = [
+        {
+            target: '#beginner-cause',
+            title: 'Choose your question',
+            body: 'Choose the possible cause and the result you care about. DAGitty will check the overall effect, including effects through other variables.'
+        },
+        {
+            target: '#beginner-edit',
+            title: 'Review your assumptions',
+            body: 'Each arrow shows a possible direct effect. Use <strong>Edit variables and arrows</strong> to review or change them, or <strong>Build step by step</strong> to start a new diagram.'
+        },
+        {
+            target: '#beginner-verdict',
+            title: 'Choose your controls',
+            body: 'Check which variables to control for under the assumptions in your diagram. If a complete set is available, you can apply it and undo that choice from the toolbar.'
+        },
+        {
+            target: '#beginner-save',
+            title: 'Save and discuss',
+            body: 'Save an editable diagram, share a link or export a figure. Discuss your choice of variables and arrows with someone who knows the subject.'
+        },
+        {
+            target: '#btn-beginner-mode',
+            title: 'Explore the full editor',
+            body: 'Switch to the full editor when you need more analysis options. You can return to this tour from <strong>Help → Tour the interface</strong>.'
+        }
+    ];
+
     var idx = 0, active = false;
+    var steps = ADVANCED_STEPS, opener = null;
     var els = {};
 
     function build() {
@@ -116,15 +145,16 @@
     }
 
     function show() {
-        var step = STEPS[idx];
+        var step = steps[idx];
         els.title.innerHTML = step.title;
         els.body.innerHTML = step.body;
-        els.progress.textContent = 'Step ' + (idx + 1) + ' of ' + STEPS.length;
+        els.progress.textContent = 'Step ' + (idx + 1) + ' of ' + steps.length;
         els.back.style.visibility = idx === 0 ? 'hidden' : 'visible';
-        els.next.textContent = idx === STEPS.length - 1 ? 'Done' : 'Next';
+        els.next.textContent = idx === steps.length - 1 ? 'Done' : 'Next';
+        if (idx === 0 && document.activeElement === els.back) els.next.focus();
 
         var target = step.target ? document.querySelector(step.target) : null;
-        if (target && target.offsetParent !== null) {
+        if (target && target.getClientRects().length) {
             // scrollIntoView updates layout synchronously, so we can measure and
             // position immediately — no requestAnimationFrame (which can be
             // throttled in background/headless tabs and leave the spotlight hidden).
@@ -179,32 +209,52 @@
         els.card.style.visibility = 'visible';
     }
 
-    function next() { if (idx < STEPS.length - 1) { idx++; show(); } else { end(); } }
+    function next() { if (idx < steps.length - 1) { idx++; show(); } else { end(); } }
     function back() { if (idx > 0) { idx--; show(); } }
 
     function onKey(e) {
         if (!active) return;
         if (e.key === 'Escape') { e.preventDefault(); end(); }
+        else if (e.key === 'Tab') {
+            var buttons = Array.from(els.card.querySelectorAll('button')).filter(function (button) {
+                return getComputedStyle(button).visibility !== 'hidden';
+            });
+            var first = buttons[0], last = buttons[buttons.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
         else if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
         else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
     }
     function onReflow() { if (active) show(); }
 
     function start() {
+        if (active) return;
         build();
+        opener = document.activeElement;
+        steps = document.body.classList.contains('beginner-mode') && document.getElementById('beginner-cause')
+            ? BEGINNER_STEPS : ADVANCED_STEPS;
         idx = 0;
         active = true;
         els.root.classList.add('on');
         document.addEventListener('keydown', onKey, true);
         window.addEventListener('resize', onReflow);
         show();
+        els.next.focus({ preventScroll: true });
     }
 
     function end() {
+        if (!active) return;
         active = false;
         if (els.root) els.root.classList.remove('on');
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', onReflow);
+        if (!opener || !opener.getClientRects().length) {
+            var submenu = opener && opener.closest('#menu ul');
+            opener = submenu ? submenu.previousElementSibling : document.getElementById('btn-build-dag');
+        }
+        if (opener) opener.focus();
+        opener = null;
         try { localStorage.setItem(STORE_KEY, '1'); } catch (e) {}
     }
 

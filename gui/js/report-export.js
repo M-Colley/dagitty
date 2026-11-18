@@ -41,6 +41,12 @@
             selected = ids(g.getSelectedNodes()), latent = ids(g.getLatentNodes());
         var all = ids(g.getVertices());
         var other = _.difference(all, exposure, outcome, adjusted, selected, latent);
+        var invalidControls = window.AdjustmentSets && AdjustmentSets.invalidControls
+            ? ids(AdjustmentSets.invalidControls(g))
+            : adjusted.filter(function (id) {
+                return exposure.indexOf(id) !== -1 || outcome.indexOf(id) !== -1 ||
+                    selected.indexOf(id) !== -1 || latent.indexOf(id) !== -1;
+            });
 
         var adjustment = null;
         if (exposure.length && outcome.length && !cyclic && kind !== 'instrument') {
@@ -50,12 +56,13 @@
                 !(kind === 'adj_direct' && (selected.length || g.getType() !== 'dag')) &&
                 !(isOdds && (g.getType() !== 'dag' || exposure.length !== 1 || outcome.length !== 1 || selected.length !== 1));
             try {
-                if (supported) sufficient = isOdds ? GraphAnalyzer.isAdjustmentSetCausalOddsRatio(g)
+                if (supported) sufficient = invalidControls.length ? false : isOdds ? GraphAnalyzer.isAdjustmentSetCausalOddsRatio(g)
                     : msasKind === 'direct' ? GraphAnalyzer.isAdjustmentSetDirectEffect(g) : GraphAnalyzer.isAdjustmentSet(g);
             } catch (e) { sufficient = null; }
             adjustment = {
                 chosen: adjusted,
                 sufficient: sufficient,
+                invalidControls: invalidControls,
                 criterion: isOdds ? 'causal odds ratio' : msasKind + ' effect',
                 supported: supported,
                 minimalSets: supported && !isOdds && window.AdjustmentSets ? AdjustmentSets.minimal(g, msasKind) : null
@@ -181,7 +188,10 @@
                 if (a.supported === false) h.push('<p class="warn">This graph or selection setup is not supported for the chosen strategy. See the assumptions statement for the requirements.</p>');
                 h.push('<table><tbody>' +
                     '<tr><th scope="row">Adjustment set chosen</th><td>' + (a.chosen.length ? '{' + esc(a.chosen.join(', ')) + '}' : '∅ (none)') + '</td></tr>' +
-                    '<tr><th scope="row">Sufficient?</th><td>' + (a.sufficient === null ? 'not computed' : a.sufficient
+                    '<tr><th scope="row">Sufficient?</th><td>' + (a.invalidControls && a.invalidControls.length
+                        ? '<span class="bad">No — conflicting Adjusted marks on ' + esc(a.invalidControls.join(', ')) +
+                          '; these variables cannot be ordinary measured controls</span>'
+                        : a.sufficient === null ? 'not computed' : a.sufficient
                         ? '<span class="ok">Yes — passes the ' + esc(a.criterion || 'adjustment') + ' criterion under this diagram</span>'
                         : '<span class="bad">No — fails the ' + esc(a.criterion || 'adjustment') + ' criterion under this diagram</span>') + '</td></tr>' +
                     '<tr><th scope="row">Minimal sufficient sets</th><td>' + esc(setText(a.minimalSets)) + '</td></tr>' +

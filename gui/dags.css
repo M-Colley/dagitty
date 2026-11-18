@@ -1637,6 +1637,7 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
   display: none;
   align-items: flex-start;
   gap: .6em;
+  width: max-content;
   max-width: min(30em, calc(100vw - 24px));
   padding: .7em .8em .7em 1em;
   background: var(--sidebar-bg);
@@ -1651,7 +1652,7 @@ body.beginner-mode h3[onclick*="'dagstyle'"] { display: none !important; }
 #app-toast.toast-ok    { border-left-color: var(--success); }
 #app-toast.toast-error { border-left-color: var(--error); }
 
-.toast-text { font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.toast-text { font-size: 12.5px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
 
 .toast-action {
   flex: 0 0 auto;

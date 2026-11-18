@@ -4,7 +4,8 @@
     var lastMode = null, advanced = null, notice = '';
     var panels = ['quickstart','variable','analysis_setup','model_data','viewmode','effects','dagstyle','coloring','legend',
         'diagram_check','causal_effect_block','paths_panel','testable_implications_block','methods_block','summary'];
-    var highlights = [['highlight_ancestral','set_highlight_ancestors'],['highlight_causal','set_highlight_causal'],['highlight_biasing','set_highlight_biasing']];
+    var highlights = [['highlight_ancestral','set_highlight_ancestors'],['highlight_causal','set_highlight_causal'],
+        ['highlight_biasing','set_highlight_biasing'],['highlight_puredirect','set_highlight_puredirect']];
     function $(id) { return document.getElementById(id); }
     function graph() { return window.Model && Model.dag; }
     function ids(vs) { return vs.map(function (v) { return v.id; }).sort(); }
@@ -12,9 +13,13 @@
     function equal(a,b) { var x=a.slice().sort(), y=b.slice().sort(); return x.length===y.length && x.every(function(v,i){return v===y[i];}); }
     function pending() { return !!($('adj_matrix') && $('adj_matrix').classList.contains('dirty')); }
     function say(s) { notice=s; if($('beginner-notice')) $('beginner-notice').textContent=s; }
+    function eligibleForQuestion(g, vertex) {
+        return vertex && !g.isLatentNode(vertex) && !g.isSelectedNode(vertex);
+    }
     function supported(g) {
         return !!(g && g.getType()==='dag' && !GraphAnalyzer.containsCycle(g) && g.getSources().length===1 &&
-            g.getTargets().length===1 && g.getSources()[0].id!==g.getTargets()[0].id);
+            g.getTargets().length===1 && g.getSources()[0].id!==g.getTargets()[0].id &&
+            eligibleForQuestion(g, g.getSources()[0]) && eligibleForQuestion(g, g.getTargets()[0]));
     }
     function available(g,id) { var v=g.getVertex(id); return !!(v && !g.isSource(v) && !g.isTarget(v) && !g.isLatentNode(v) && !g.isSelectedNode(v)); }
     function canEdit() {
@@ -27,7 +32,6 @@
         if(window.UndoRedo) UndoRedo.push();
         notice=''; DAGittyControl.setGraph(g);
         if(window.UndoRedo) UndoRedo.push();
-        refresh();
     }
     function applyControls(chosen,validate) {
         var g=graph(); if(!canEdit()) return false;
@@ -45,8 +49,8 @@
     function chooseRole(source,id) {
         var g=graph(); if(!canEdit()){refresh();return;}
         var v=g.getVertex(id), opposite=source?g.getTargets():g.getSources();
-        if(!v || g.isLatentNode(v) || g.isSelectedNode(v) || opposite.some(function(o){return o.id===id;})) {
-            say('Choose two different, measured variables for the possible cause and result.'); refresh(); return;
+        if(!eligibleForQuestion(g, v) || opposite.some(function(o){return o.id===id;})) {
+            say('Choose two different measured variables that are not selection nodes.'); refresh(); return;
         }
         var next=g.clone();
         (source?next.getSources():next.getTargets()).slice().forEach(function(old){
@@ -78,14 +82,17 @@
                 } catch(e) {}
                 highlights.forEach(function(pair){
                     var input=$(pair[0]); advanced.highlights.push(input?input.checked:null);
-                    if(input && window.GUI && GUI[pair[1]]) {input.checked=false;GUI[pair[1]](false);}
+                    if(input && input.checked && window.GUI && GUI[pair[1]]) {input.checked=false;GUI[pair[1]](false);}
                 });
                 if(window.GUI && GUI.set_view_mode && $('dagview_normal')) GUI.set_view_mode('normal');
                 strategy('adj_total');
             } else if(advanced) {
                 highlights.forEach(function(pair,i){
                     var input=$(pair[0]), value=advanced.highlights[i];
-                    if(input && value!==null && window.GUI && GUI[pair[1]]) {input.checked=value;GUI[pair[1]](value);}
+                    if(input && value!==null && value!==input.checked && window.GUI && GUI[pair[1]]) {
+                        input.checked=value;
+                        GUI[pair[1]](value);
+                    }
                 });
                 if(window.GUI && GUI.set_view_mode && $('dagview_'+advanced.view)) GUI.set_view_mode(advanced.view);
                 strategy(supportedStrategy(advanced.effect)?advanced.effect:'adj_total');
@@ -108,13 +115,20 @@
         var text=document.createElement('p');text.textContent=set.length?set.join(', '):'No additional control variables';row.appendChild(text);
         var button=document.createElement('button');button.type='button';button.dataset.focusKey='set:'+JSON.stringify(set);
         button.textContent=equal(set,current)?'Already using this set':set.length?'Use these controls':'Use no controls';
-        button.disabled=pending()||equal(set,current);button.addEventListener('click',function(){applyControls(set,true);});
+        button.disabled=pending()||equal(set,current);
+        button.addEventListener('click',function(){
+            if (applyControls(set,true)) $('beginner-verdict').focus();
+        });
         row.appendChild(button);host.appendChild(row);
     }
     function checks() {
-        var host=$('beginner-checks');host.replaceChildren();if(!window.DiagramCheck)return;
+        var host=$('beginner-checks');
+        var wasOpen=!!host.querySelector('details[open]');
+        host.replaceChildren();if(!window.DiagramCheck)return;
         var items=DiagramCheck.analyse().filter(function(f){return f.level==='error'||f.level==='warn';});
         var details=document.createElement('details'),summary=document.createElement('summary');
+        details.open=wasOpen;
+        summary.dataset.focusKey='checks';
         summary.textContent=items.length?'Review diagram checks ('+items.length+')':'About these checks';details.appendChild(summary);
         if(items.length) {
             var ul=document.createElement('ul');items.forEach(function(f){var li=document.createElement('li');li.textContent=(f.subject||'')+f.text;ul.appendChild(li);});details.appendChild(ul);
@@ -129,6 +143,7 @@
         var focus=document.activeElement&&document.activeElement.dataset.focusKey;
         populate($('beginner-cause'),g,true);populate($('beginner-result'),g,false);
         var valid=supported(g),current=ids(g.getAdjustedNodes()),verdict=$('beginner-verdict'),explanation=$('beginner-explanation'),host=$('beginner-options');
+        var alternativesOpen=!!host.querySelector('details[open]');
         $('beginner-draft').hidden=!pending();host.replaceChildren();verdict.className='beginner-verdict';
         $('beginner-question').textContent=valid?'What is the overall effect of '+g.getSources()[0].id+' on '+g.getTargets()[0].id+'?':'Choose one possible cause and one result.';
         $('beginner-chosen').textContent='Your current controls: '+(current.length?current.join(', '):'none')+'.';
@@ -136,12 +151,21 @@
             verdict.textContent='An arrow loop needs fixing first.';explanation.textContent='A causal DAG cannot loop back to the same variable. Review the arrows in your diagram.';
         } else if(g.getType()!=='dag') {
             verdict.textContent='This diagram needs the full editor.';explanation.textContent='The simplified view handles DAGs. Use the full editor to review uncertain directions or other graph types.';
+        } else if(g.getSources().concat(g.getTargets()).some(function(v) { return !eligibleForQuestion(g, v); })) {
+            verdict.textContent='Choose a measured cause and result.';
+            explanation.textContent='Select measured variables that are not selection nodes, or open the full editor to review their roles.';
         } else if(!valid) {
             verdict.textContent='Start with your question.';explanation.textContent='Choose one possible cause and one result, or build a diagram step by step. Use the full editor for joint effects involving several causes or results.';
         } else {
-            var sets=window.AdjustmentSets?AdjustmentSets.minimal(g,'total'):null,sufficient=GraphAnalyzer.isAdjustmentSet(g);
+            var sets=window.AdjustmentSets?AdjustmentSets.minimal(g,'total'):null;
+            var invalid = AdjustmentSets.invalidControls(g);
+            var sufficient = !invalid.length && GraphAnalyzer.isAdjustmentSet(g);
             verdict.classList.add(sufficient?'beginner-ok':'beginner-review');
-            verdict.textContent=sufficient?'Your controls are sufficient under this diagram.':'Your current controls are not sufficient under this diagram.';
+            if (invalid.length) {
+                verdict.textContent = 'These variables cannot be used as controls with their current roles: ' + ids(invalid).join(', ') + '.';
+            } else {
+                verdict.textContent=sufficient?'Your controls are sufficient under this diagram.':'Your current controls are not sufficient under this diagram.';
+            }
             if(sets===null) explanation.textContent='Adjustment advice is unavailable for this question. Review it in the full editor.';
             else if(!sets.length) explanation.textContent='No set of measured controls can identify the overall effect by adjustment under these assumptions. Review the assumptions and study design; the full editor offers other analysis strategies.';
             else {
@@ -150,8 +174,13 @@
                 option(host,sets[0],current);
                 if(sets.length>1) {
                     var details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Other valid options ('+(sets.length-1)+')';details.appendChild(summary);
+                    details.open=alternativesOpen;
+                    summary.dataset.focusKey='alternatives';
                     sets.slice(1).forEach(function(set){option(details,set,current);});host.appendChild(details);
                 }
+            }
+            if (invalid.length && (!sets || !sets.length)) {
+                explanation.textContent += ' Review the conflicting roles in the full editor.';
             }
         }
         var selected=ids(g.getSelectedNodes()),latent=ids(g.getLatentNodes());
@@ -186,7 +215,7 @@
         $('beginner-results').innerHTML=
             '<section class="beginner-card"><h2>3. Choose your controls</h2><p id="beginner-question"></p>'+
             '<p id="beginner-draft" class="beginner-draft" role="alert" hidden>You have unapplied model code. Switch to the full editor to apply or clear it before changing the diagram.</p>'+
-            '<p id="beginner-verdict" class="beginner-verdict" role="status"></p><p id="beginner-explanation"></p><p id="beginner-chosen"></p><div id="beginner-options"></div><p id="beginner-special" class="beginner-note"></p>'+
+            '<p id="beginner-verdict" class="beginner-verdict" role="status" tabindex="-1"></p><p id="beginner-explanation"></p><p id="beginner-chosen"></p><div id="beginner-options"></div><p id="beginner-special" class="beginner-note"></p>'+
             '<details><summary>Try your own controls</summary><p>Tick variables you plan to control for, for example in a regression. The advice updates when you change them.</p><div id="beginner-controls"></div></details>'+
             '<div id="beginner-checks"></div><p id="beginner-notice" role="alert"></p><p class="beginner-note">This is advice about adjustment under your diagram, not proof of a causal effect. Missing causes, measurement problems and study design still matter.</p></section>'+
             '<section class="beginner-card"><h2>4. Save and discuss</h2><p>Share the diagram and its assumptions with someone who knows your topic.</p>'+
@@ -196,7 +225,10 @@
         $('beginner-build').addEventListener('click',function(){if(window.DagWizard)DagWizard.start();});
         $('beginner-canvas').addEventListener('click',function(){if($('canvas')){$('canvas').scrollIntoView({block:'center'});$('canvas').focus();}});
         $('beginner-edit').addEventListener('click',function(){if(window.StructuredEditor)StructuredEditor.open();});
-        $('beginner-full').addEventListener('click',function(){BeginnerMode.toggle();});
+        $('beginner-full').addEventListener('click',function(){
+            BeginnerMode.toggle();
+            $('btn-beginner-mode').focus();
+        });
         $('beginner-save').addEventListener('click',function(){if(window.downloadModel)downloadModel();});
         $('beginner-share').addEventListener('click',function(){if(window.Workspace)Workspace.shareLink();});
         $('beginner-figure').addEventListener('click',function(){if(window.PubExport)PubExport.open();});
@@ -207,7 +239,16 @@
         if(window.DAGittyControl)DAGittyControl.observe('graphchange',refresh);
         if($('adj_matrix')&&window.MutationObserver)new MutationObserver(refresh).observe($('adj_matrix'),{attributes:true,attributeFilter:['class']});
         var saved;try{saved=localStorage.getItem(BeginnerMode.KEY);}catch(e){saved=null;}
-        if(saved==='false') {try{var effect=localStorage.getItem('dagitty_advanced_effect');if(effect&&supportedStrategy(effect))strategy(effect);}catch(e){}}
+        if (saved === 'false') {
+            // Workspace restores saved and shared diagrams later in the load event.
+            // Check the saved strategy against that diagram, not the starter example.
+            window.setTimeout(function () {
+                if (BeginnerMode.active) return;
+                var effect;
+                try { effect = localStorage.getItem('dagitty_advanced_effect'); } catch (e) { return; }
+                if (effect && supportedStrategy(effect)) strategy(effect);
+            }, 0);
+        }
         if(saved!=='true'&&saved!=='false'){BeginnerMode.active=true;BeginnerMode._apply();}else mode();
     }
     window.BeginnerGuide={refresh:refresh,applySet:function(set){return applyControls(set,true);}};
